@@ -1,0 +1,11 @@
+{
+    "idf.portWin": "COM12",
+    "idf.openOcdConfigs": [
+        "board/esp32s3-bridge.cfg"
+    ],
+    "files.associations": {
+        "*.py": "python",
+        "system_error": "cpp"
+    },
+    "cmake.sourceDirectory": "D:/HTN-BTL/lib/ArduinoJson/src"
+}
