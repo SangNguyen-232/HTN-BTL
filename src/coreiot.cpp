@@ -324,21 +324,34 @@ void handleAttributesUpdate(const char* jsonData) {
         bool wasManual = pump_manual_control;
         bool newMode = (coreiot_data.pump_mode == "MANUAL");
         pump_manual_control = newMode;
+        xSemaphoreGive(xMutexPumpControl);  // Release mutex trước khi gọi calculateAutoPumpState()
         
         // Nếu chuyển sang AUTO mode, tính toán lại pump_state dựa trên soil moisture
         if (!newMode && wasManual) {
-          // Chuyển từ MANUAL sang AUTO: tính toán lại state
+          // Chuyển từ MANUAL sang AUTO: tính toán lại state (release mutex trước để tránh deadlock)
           calculated_pump_state = calculateAutoPumpState();
-          pump_state = calculated_pump_state;
+          
+          // Lấy lại mutex để cập nhật pump_state
+          if (xSemaphoreTake(xMutexPumpControl, portMAX_DELAY) == pdTRUE) {
+            pump_state = calculated_pump_state;
+            xSemaphoreGive(xMutexPumpControl);
+          } else {
+            pump_state = calculated_pump_state;  // Fallback
+          }
+          
           coreiot_data.pump_state = calculated_pump_state;  // Cập nhật lại coreiot_data với state mới
           autoStateCalculated = true;
           Serial.println("[AUTO] Switched to AUTO mode from attributes, calculated new pump state: " + String(calculated_pump_state ? "ON" : "OFF"));
         } else {
           // Giữ nguyên state nếu đang ở MANUAL hoặc đã ở AUTO
-          pump_state = coreiot_data.pump_state;
+          if (xSemaphoreTake(xMutexPumpControl, portMAX_DELAY) == pdTRUE) {
+            pump_state = coreiot_data.pump_state;
+            xSemaphoreGive(xMutexPumpControl);
+          } else {
+            pump_state = coreiot_data.pump_state;  // Fallback
+          }
         }
         
-        xSemaphoreGive(xMutexPumpControl);
         Serial.println("[SYNC] Local pump state/mode updated from CoreIOT attributes");
         Serial.println("  Pump State: " + String(pump_state ? "ON" : "OFF"));
         Serial.println("  Pump Mode: " + String(pump_manual_control ? "MANUAL" : "AUTO"));
@@ -472,20 +485,33 @@ void handleRPCRequest(String topicStr, const char* jsonData) {
     if (xSemaphoreTake(xMutexPumpControl, portMAX_DELAY) == pdTRUE) {
       bool wasManual = pump_manual_control;
       pump_manual_control = isManual;
+      xSemaphoreGive(xMutexPumpControl);  // Release mutex trước khi gọi calculateAutoPumpState()
+      
       bool current_pump_state;
       
       // Nếu chuyển sang AUTO mode, tính toán lại pump_state dựa trên soil moisture
       if (!isManual && wasManual) {
-        // Chuyển từ MANUAL sang AUTO: tính toán lại state
+        // Chuyển từ MANUAL sang AUTO: tính toán lại state (release mutex trước để tránh deadlock)
         current_pump_state = calculateAutoPumpState();
-        pump_state = current_pump_state;
+        
+        // Lấy lại mutex để cập nhật pump_state
+        if (xSemaphoreTake(xMutexPumpControl, portMAX_DELAY) == pdTRUE) {
+          pump_state = current_pump_state;
+          xSemaphoreGive(xMutexPumpControl);
+        } else {
+          pump_state = current_pump_state;  // Fallback
+        }
+        
         Serial.println("[AUTO] Switched to AUTO mode, calculated new pump state: " + String(current_pump_state ? "ON" : "OFF"));
       } else {
         // Giữ nguyên state nếu đang ở MANUAL hoặc đã ở AUTO
-        current_pump_state = pump_state;
+        if (xSemaphoreTake(xMutexPumpControl, portMAX_DELAY) == pdTRUE) {
+          current_pump_state = pump_state;
+          xSemaphoreGive(xMutexPumpControl);
+        } else {
+          current_pump_state = pump_state;  // Fallback
+        }
       }
-      
-      xSemaphoreGive(xMutexPumpControl);
       
       // ĐỒNG BỘ: Cập nhật coreiot_data để mainserver/LCD hiển thị đúng
       coreiot_data.pump_state = current_pump_state;

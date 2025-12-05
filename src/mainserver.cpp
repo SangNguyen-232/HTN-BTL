@@ -19,9 +19,9 @@ Adafruit_NeoPixel neoPixel(1, LED2_PIN, NEO_GRB + NEO_KHZ800);
 unsigned long connect_start_ms = 0;
 bool connecting = false;
 
-// Thêm biến để tracking connection status
-String connectionStatus = "idle";
-String newIPAddress = "";
+// Thêm biến để tracking connection status (tối ưu: loại bỏ nếu không dùng)
+// String connectionStatus = "idle";
+// String newIPAddress = "";
 
 // Biến để lưu dữ liệu từ CoreIOT (struct được định nghĩa trong mainserver.h)
 CoreIOTData coreiot_data;
@@ -35,10 +35,10 @@ String mainPage() {
   
   // AP MODE: Sử dụng dữ liệu local trực tiếp, không cần CoreIOT
   if (isAPMode) {
-    // Debug: Print AP mode status
+    // Debug: Print AP mode status (tối ưu: giảm tần suất log)
     static unsigned long lastAPDebug = 0;
     if (millis() - lastAPDebug > 5000) {  // Every 5 seconds
-      Serial.println("[WEB] AP Mode - using local sensor data");
+      Serial.println(F("[WEB] AP Mode - using local sensor data"));
       lastAPDebug = millis();
     }
     
@@ -52,22 +52,19 @@ String mainPage() {
     message = glob_anomaly_message;
     
     // Lấy trạng thái LED và Pump từ local state
-    led1 = led1_state ? "ON" : "OFF";
-    led2 = led2_state ? "ON" : "OFF";
+    led1 = led1_state ? F("ON") : F("OFF");
+    led2 = led2_state ? F("ON") : F("OFF");
     
-    // Lấy pump state và mode từ local (thread-safe)
-    bool current_pump_state;
-    bool current_pump_mode;
+    // Lấy pump state và mode từ local (thread-safe) - tối ưu: loại bỏ else duplicate
+    bool current_pump_state = pump_state;
+    bool current_pump_mode = pump_manual_control;
     if (xSemaphoreTake(xMutexPumpControl, portMAX_DELAY) == pdTRUE) {
       current_pump_state = pump_state;
       current_pump_mode = pump_manual_control;
       xSemaphoreGive(xMutexPumpControl);
-    } else {
-      current_pump_state = pump_state;
-      current_pump_mode = pump_manual_control;
     }
-    pumpState = current_pump_state ? "ON" : "OFF";
-    pumpMode = current_pump_mode ? "MANUAL" : "AUTO";
+    pumpState = current_pump_state ? F("ON") : F("OFF");
+    pumpMode = current_pump_mode ? F("MANUAL") : F("AUTO");
   }
   // STA MODE: Lấy dữ liệu từ CoreIOT
   // Flow: Sensors → CoreIOT → Mainserver/LCD hiển thị từ CoreIOT
@@ -79,9 +76,9 @@ String mainPage() {
     soil = String(coreiot_data.soil);
     score = String(coreiot_data.anomaly_score, 4);
     message = coreiot_data.anomaly_message;
-    led1 = coreiot_data.led1_state ? "ON" : "OFF";
-    led2 = coreiot_data.led2_state ? "ON" : "OFF";
-    pumpState = coreiot_data.pump_state ? "ON" : "OFF";
+    led1 = coreiot_data.led1_state ? F("ON") : F("OFF");
+    led2 = coreiot_data.led2_state ? F("ON") : F("OFF");
+    pumpState = coreiot_data.pump_state ? F("ON") : F("OFF");
     pumpMode = coreiot_data.pump_mode;
   } else {
     // Chưa có dữ liệu từ CoreIOT lần đầu, lấy từ local để hiển thị
@@ -94,22 +91,19 @@ String mainPage() {
     message = glob_anomaly_message;
     
     // Lấy trạng thái LED và Pump từ local state
-    led1 = led1_state ? "ON" : "OFF";
-    led2 = led2_state ? "ON" : "OFF";
+    led1 = led1_state ? F("ON") : F("OFF");
+    led2 = led2_state ? F("ON") : F("OFF");
     
-    // Lấy pump state và mode từ local (thread-safe)
-    bool current_pump_state;
-    bool current_pump_mode;
+    // Lấy pump state và mode từ local (thread-safe) - tối ưu: loại bỏ else duplicate
+    bool current_pump_state = pump_state;
+    bool current_pump_mode = pump_manual_control;
     if (xSemaphoreTake(xMutexPumpControl, portMAX_DELAY) == pdTRUE) {
       current_pump_state = pump_state;
       current_pump_mode = pump_manual_control;
       xSemaphoreGive(xMutexPumpControl);
-    } else {
-      current_pump_state = pump_state;
-      current_pump_mode = pump_manual_control;
     }
-    pumpState = current_pump_state ? "ON" : "OFF";
-    pumpMode = current_pump_mode ? "MANUAL" : "AUTO";
+    pumpState = current_pump_state ? F("ON") : F("OFF");
+    pumpMode = current_pump_mode ? F("MANUAL") : F("AUTO");
   }
   
   // Load pump thresholds (chỉ cần load một lần khi khởi động)
@@ -119,6 +113,7 @@ String mainPage() {
     thresholds_loaded = true;
   }
   
+  // Tối ưu: sử dụng trực tiếp trong template thay vì tạo String
   String thresholdMin = String(pump_threshold_min);
   String thresholdMax = String(pump_threshold_max);
 
@@ -820,11 +815,13 @@ String mainPage() {
           align-items:center;
           gap:10px;
           margin-bottom:12px;
+          justify-content:space-between;
         }
         .chart-title{
           font-weight:700;
           font-size:16px;
           color:var(--text);
+          flex:1;
         }
         .chart-icon{
           width:20px;
@@ -832,9 +829,45 @@ String mainPage() {
           color:rgba(59,130,246,0.95);
         }
         .chart-icon svg { width:100%; height:100%; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; stroke:currentColor; fill:none; }
+        .chart-refresh-info{
+          font-size:12px;
+          color:var(--muted);
+          font-weight:600;
+          display:flex;
+          align-items:center;
+          gap:4px;
+        }
+        .chart-refresh-info span{
+          color:var(--accent);
+          font-weight:700;
+        }
+        .chart-legend{
+          display:flex;
+          align-items:center;
+          gap:16px;
+          margin-bottom:12px;
+          padding:8px 0;
+          flex-wrap:wrap;
+        }
+        .legend-item{
+          display:flex;
+          align-items:center;
+          gap:8px;
+        }
+        .legend-color{
+          width:12px;
+          height:12px;
+          border-radius:2px;
+          flex-shrink:0;
+        }
+        .legend-label{
+          font-size:12px;
+          color:var(--muted);
+          font-weight:600;
+        }
         .chart-wrapper{
           width:100%;
-          height:300px;
+          height:320px;
           position:relative;
         }
         .map-container{
@@ -1033,6 +1066,21 @@ String mainPage() {
               </svg>
             </div>
             <div class="chart-title">Sensor Data Chart</div>
+            <div class="chart-refresh-info" id="chart-refresh-info">Refresh: <span id="chart-refresh-rate">5s</span></div>
+          </div>
+          <div class="chart-legend">
+            <div class="legend-item">
+              <div class="legend-color" style="background: rgba(251, 191, 36, 0.95);"></div>
+              <span class="legend-label">Temperature (°C)</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-color" style="background: rgba(125, 211, 252, 0.95);"></div>
+              <span class="legend-label">Humidity (%)</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-color" style="background: rgba(74, 222, 128, 0.95);"></div>
+              <span class="legend-label">Soil Moisture (%)</span>
+            </div>
           </div>
           <div class="chart-wrapper">
             <canvas id="sensorChart"></canvas>
@@ -1187,6 +1235,14 @@ String mainPage() {
         const isAPMode = window.location.hostname === '192.168.4.1' || window.location.hostname.includes('192.168.4');
         let currentRefreshRate = isAPMode ? 3 : 5; // 3s for AP mode, 5s for STA mode
         
+        // Cập nhật refresh rate hiển thị trong chart khi khởi động
+        function updateChartRefreshDisplay() {
+          const chartRefreshRate = document.getElementById('chart-refresh-rate');
+          if (chartRefreshRate) {
+            chartRefreshRate.textContent = currentRefreshRate + 's';
+          }
+        }
+        
         // Dữ liệu cho custom chart
         let chartData = {
           labels: [],
@@ -1208,6 +1264,11 @@ String mainPage() {
         
         function updateRefreshDisplay() {
           document.getElementById('refresh-current').textContent = currentRefreshRate + 's';
+          // Cập nhật refresh rate trong chart
+          const chartRefreshRate = document.getElementById('chart-refresh-rate');
+          if (chartRefreshRate) {
+            chartRefreshRate.textContent = currentRefreshRate + 's';
+          }
         }
         
         function updateRefreshRate() {
@@ -1427,7 +1488,7 @@ String mainPage() {
         const canvas = document.getElementById('sensorChart');
         const ctx = canvas.getContext('2d');
 
-        // Hàm vẽ đường line (Helper function)
+        // Hàm vẽ đường line với marker (Helper function)
         function drawLine(dataArray, color, stepX, mapY, padding) {
           ctx.beginPath();
           ctx.strokeStyle = color;
@@ -1442,45 +1503,140 @@ String mainPage() {
             else ctx.lineTo(x, y);
           }
           ctx.stroke();
+          
+          // Vẽ marker (chấm tròn) tại mỗi điểm dữ liệu
+          for (let i = 0; i < dataArray.length; i++) {
+            let x = padding + (i * stepX);
+            let y = mapY(dataArray[i]);
+            
+            ctx.beginPath();
+            ctx.fillStyle = color;
+            ctx.arc(x, y, 3, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Vẽ viền trắng cho marker
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.lineWidth = 1;
+            ctx.arc(x, y, 3, 0, Math.PI * 2);
+            ctx.stroke();
+          }
         }
 
         // Hàm vẽ biểu đồ thủ công
         function drawCustomChart() {
           const w = canvas.width;
           const h = canvas.height;
-          const padding = 30;
+          const paddingTop = 20;
+          const paddingBottom = 40;
+          const paddingLeft = 45;
+          const paddingRight = 20;
+          const chartWidth = w - paddingLeft - paddingRight;
+          const chartHeight = h - paddingTop - paddingBottom;
 
           ctx.clearRect(0, 0, w, h);
           
-          // Vẽ khung trục Y (0-100)
-          ctx.beginPath();
+          // Vẽ lưới ngang và nhãn trục Y (0-100)
           ctx.strokeStyle = 'rgba(255,255,255,0.1)';
           ctx.lineWidth = 1;
-          for(let i=0; i<=5; i++) {
-            let y = h - padding - (i * (h - 2*padding) / 5);
-            ctx.moveTo(padding, y);
-            ctx.lineTo(w - padding, y);
-            ctx.fillStyle = '#6b7280';
-            ctx.font = '10px Arial';
-            ctx.fillText(i * 20, 5, y + 3); 
+          ctx.fillStyle = '#9ca3af';
+          ctx.font = '11px Arial';
+          ctx.textAlign = 'right';
+          ctx.textBaseline = 'middle';
+          
+          for(let i=0; i<=8; i++) {
+            let y = paddingTop + (i * chartHeight / 8);
+            let value = 80 - (i * 10);
+            
+            // Vẽ đường lưới ngang
+            ctx.beginPath();
+            ctx.moveTo(paddingLeft, y);
+            ctx.lineTo(w - paddingRight, y);
+            ctx.stroke();
+            
+            // Vẽ nhãn trục Y
+            ctx.fillText(value.toString(), paddingLeft - 8, y);
           }
+          
+          // Vẽ trục Y
+          ctx.beginPath();
+          ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+          ctx.lineWidth = 1;
+          ctx.moveTo(paddingLeft, paddingTop);
+          ctx.lineTo(paddingLeft, h - paddingBottom);
+          ctx.stroke();
+          
+          // Vẽ trục X
+          ctx.beginPath();
+          ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+          ctx.lineWidth = 1;
+          ctx.moveTo(paddingLeft, h - paddingBottom);
+          ctx.lineTo(w - paddingRight, h - paddingBottom);
           ctx.stroke();
 
           const mapY = (val) => {
              if(val > 100) val = 100;
              if(val < 0) val = 0;
-             return h - padding - (val / 100) * (h - 2*padding);
+             // Map từ 0-100 sang 0-80 trên biểu đồ
+             let mappedVal = (val / 100) * 80;
+             return paddingTop + chartHeight - (mappedVal / 80) * chartHeight;
           };
           
           const len = chartData.labels.length;
           if (len < 2) return; 
 
-          const stepX = (w - 2*padding) / (maxDataPoints - 1);
+          const stepX = chartWidth / (len - 1);
 
-          // Vẽ 3 đường dữ liệu
-          drawLine(chartData.temperature, 'rgba(251, 191, 36, 0.95)', stepX, mapY, padding);
-          drawLine(chartData.humidity, 'rgba(125, 211, 252, 0.95)', stepX, mapY, padding);
-          drawLine(chartData.soil, 'rgba(74, 222, 128, 0.95)', stepX, mapY, padding);
+          // Vẽ 3 đường dữ liệu với marker
+          drawLine(chartData.temperature, 'rgba(251, 191, 36, 0.95)', stepX, mapY, paddingLeft);
+          drawLine(chartData.humidity, 'rgba(125, 211, 252, 0.95)', stepX, mapY, paddingLeft);
+          drawLine(chartData.soil, 'rgba(74, 222, 128, 0.95)', stepX, mapY, paddingLeft);
+          
+          // Vẽ nhãn trục X (thời gian)
+          ctx.fillStyle = '#9ca3af';
+          ctx.font = '10px Arial';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'top';
+          
+          // Tính toán số nhãn cần hiển thị dựa trên refresh rate
+          // Mục tiêu: hiển thị khoảng 8-10 nhãn để dễ đọc
+          const targetLabels = 9;
+          const labelInterval = Math.max(1, Math.floor(len / targetLabels));
+          
+          for(let i = 0; i < len; i += labelInterval) {
+            if (i < chartData.labels.length) {
+              let x = paddingLeft + (i * stepX);
+              let timeLabel = chartData.labels[i];
+              
+              // Vẽ đường lưới dọc mờ
+              ctx.beginPath();
+              ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+              ctx.lineWidth = 1;
+              ctx.moveTo(x, paddingTop);
+              ctx.lineTo(x, h - paddingBottom);
+              ctx.stroke();
+              
+              // Vẽ nhãn thời gian
+              ctx.fillText(timeLabel, x, h - paddingBottom + 8);
+            }
+          }
+          
+          // Vẽ nhãn thời gian cuối cùng nếu chưa được vẽ
+          if (len > 0) {
+            let lastIndex = len - 1;
+            let shouldShowLast = (lastIndex % labelInterval !== 0);
+            
+            // Luôn hiển thị nhãn cuối cùng nếu khoảng cách đủ xa
+            if (shouldShowLast || lastIndex === 0) {
+              let x = paddingLeft + (lastIndex * stepX);
+              let prevLabelX = paddingLeft + ((lastIndex - labelInterval) * stepX);
+              
+              // Chỉ hiển thị nếu không quá gần nhãn trước đó
+              if (lastIndex === 0 || (x - prevLabelX) > 50) {
+                ctx.fillText(chartData.labels[lastIndex], x, h - paddingBottom + 8);
+              }
+            }
+          }
         }
 
         // Hàm resize canvas (Quan trọng cho Responsive)
@@ -1500,7 +1656,10 @@ String mainPage() {
         // Cập nhật dữ liệu (Thay thế updateChart cũ)
         function updateChart(temp, hum, soil) {
           const now = new Date();
-          const timeLabel = now.getHours() + ':' + now.getMinutes();
+          const hours = String(now.getHours()).padStart(2, '0');
+          const minutes = String(now.getMinutes()).padStart(2, '0');
+          const seconds = String(now.getSeconds()).padStart(2, '0');
+          const timeLabel = hours + ':' + minutes + ':' + seconds;
           
           chartData.labels.push(timeLabel);
           chartData.temperature.push(parseFloat(temp));
@@ -1662,6 +1821,7 @@ String mainPage() {
         
         // Initialize refresh rate and start updates
         loadRefreshRate();
+        updateChartRefreshDisplay();
         initChart();
         
         // Sync LCD refresh rate with web refresh rate on page load
@@ -2593,7 +2753,7 @@ void fetchCoreIOTData() {
   if (isAPMode || !WiFi.isConnected()) {
     use_coreiot_data = false;
     coreiot_data.is_valid = false;
-    Serial.println("[CoreIOT] Not connected to internet, using local data");
+    Serial.println(F("[CoreIOT] Not connected to internet, using local data"));
     return;
   }
   
@@ -2602,7 +2762,7 @@ void fetchCoreIOTData() {
   if (coreiot_server.length() == 0 || coreiot_token.length() == 0) {
     use_coreiot_data = false;
     coreiot_data.is_valid = false;
-    Serial.println("[CoreIOT] No credentials configured, using local data");
+    Serial.println(F("[CoreIOT] No credentials configured, using local data"));
     return;
   }
 
@@ -2650,7 +2810,7 @@ void fetchCoreIOTData() {
         JsonObject client = doc["client"];
         if (client.containsKey("pump_state") || client.containsKey("pump_mode")) {
           hasConnection = true;
-          Serial.println("[CoreIOT] Connected - pump controls available");
+          Serial.println(F("[CoreIOT] Connected - pump controls available"));
           
           // Có thể thêm logic xử lý pump control từ CoreIOT ở đây nếu cần
           if (client.containsKey("pump_state")) {
@@ -2664,7 +2824,7 @@ void fetchCoreIOTData() {
       
       if (hasConnection) {
         // Kết nối CoreIOT thành công, nhưng dùng sensor data local
-        Serial.println("[CoreIOT] Connected successfully, using local sensor data");
+        Serial.println(F("[CoreIOT] Connected successfully, using local sensor data"));
         use_coreiot_data = false;  // Vẫn dùng local data cho sensors
         coreiot_data.is_valid = false;  // Không có sensor data từ CoreIOT
         return;
@@ -2677,8 +2837,8 @@ void fetchCoreIOTData() {
   }
   
   // Nếu tất cả endpoints đều thất bại, fallback sang local data
-  Serial.println("[CoreIOT] All endpoints failed or no data available");
-  Serial.println("[CoreIOT] Using local sensor data (CoreIOT platform doesn't store sensor history)");
+  Serial.println(F("[CoreIOT] All endpoints failed or no data available"));
+  Serial.println(F("[CoreIOT] Using local sensor data (CoreIOT platform doesn't store sensor history)"));
   use_coreiot_data = false;
   coreiot_data.is_valid = false;
 }
@@ -2686,13 +2846,13 @@ void fetchCoreIOTData() {
 // Function gửi dữ liệu lên CoreIOT
 void sendDataToCoreIOT(String data) {
   if (isAPMode || !WiFi.isConnected()) {
-    Serial.println("[CoreIOT] Not connected to internet, cannot send data");
+    Serial.println(F("[CoreIOT] Not connected to internet, cannot send data"));
     return;
   }
   
   loadCoreIOTCredentials();
   if (coreiot_server.length() == 0) {
-    Serial.println("[CoreIOT] No server configured, cannot send data");
+    Serial.println(F("[CoreIOT] No server configured, cannot send data"));
     return;
   }
   
@@ -2703,7 +2863,7 @@ void sendDataToCoreIOT(String data) {
   if (coreiot_use_token && coreiot_token.length() > 0) {
     path += coreiot_token + "/telemetry";
   } else {
-    Serial.println("[CoreIOT] No valid credentials for sending data");
+    Serial.println(F("[CoreIOT] No valid credentials for sending data"));
     return;
   }
   
@@ -2790,10 +2950,10 @@ void handleCoreIOTData() {
       use_coreiot_data = true;
       
       server.send(200, "application/json", "{\"success\":true,\"message\":\"Data received and updated\"}");
-      Serial.println("[CoreIOT] Data received and updated from server");
+      Serial.println(F("[CoreIOT] Data received and updated from server"));
     } else {
       server.send(400, "application/json", "{\"error\":\"No valid data fields found\"}");
-      Serial.println("[CoreIOT] No valid data fields found in payload");
+      Serial.println(F("[CoreIOT] No valid data fields found in payload"));
     }
   } else {
     server.send(400, "application/json", "{\"error\":\"Invalid JSON format\"}");
@@ -2819,7 +2979,7 @@ void handleToggle() {
       digitalWrite(LED1_PIN, LOW);
     }
     web_led1_control_enabled = true;
-    Serial.println("LED1 " + String(led1_state ? "ON" : "OFF"));
+    Serial.print(F("LED1 ")); Serial.println(led1_state ? F("ON") : F("OFF"));
   }
   else if (led == 2) {
     if (action == "on") {
@@ -2834,7 +2994,7 @@ void handleToggle() {
         uint8_t g = (hexValue >> 8) & 0xFF;
         uint8_t b = hexValue & 0xFF;
         rgbColor = neoPixel.Color(r, g, b);
-        Serial.println("Custom color: R=" + String(r) + " G=" + String(g) + " B=" + String(b));
+        Serial.print(F("Custom color: R=")); Serial.print(r); Serial.print(F(" G=")); Serial.print(g); Serial.print(F(" B=")); Serial.println(b);
       } else {
         if (color == "red") rgbColor = neoPixel.Color(255, 0, 0);
         else if (color == "green") rgbColor = neoPixel.Color(0, 255, 0);
@@ -2844,7 +3004,7 @@ void handleToggle() {
         else if (color == "cyan") rgbColor = neoPixel.Color(0, 255, 255);
         else if (color == "white") rgbColor = neoPixel.Color(255, 255, 255);
         else rgbColor = neoPixel.Color(255, 255, 255);
-        Serial.println("Preset color: " + color);
+        Serial.print(F("Preset color: ")); Serial.println(color);
       }
       
       neoPixel.setPixelColor(0, rgbColor);
@@ -2855,7 +3015,7 @@ void handleToggle() {
       neoPixel.show();
     }
     web_led2_control_enabled = true;
-    Serial.println("LED2 " + String(led2_state ? "ON" : "OFF"));
+    Serial.print(F("LED2 ")); Serial.println(led2_state ? F("ON") : F("OFF"));
   }
   
   server.send(200, "application/json",
@@ -3130,16 +3290,30 @@ void handleConnect() {
   wifi_ssid = server.arg("ssid");
   wifi_password = server.arg("pass");
   
-  // Gửi response ngay để không bị timeout
-  server.send(200, "text/plain", "OK");
+  // Validate input
+  if (wifi_ssid.length() == 0) {
+    server.send(400, "application/json", "{\"error\":\"SSID cannot be empty\"}");
+    return;
+  }
   
-  // Đợi một chút để response được gửi đi
-  delay(100);
+  Serial.println(F("=== WiFi Connection Request ==="));
+  Serial.print(F("SSID: "));
+  Serial.println(wifi_ssid);
+  Serial.print(F("Password length: "));
+  Serial.println(wifi_password.length());
+  
+  // Gửi response ngay để không bị timeout
+  server.send(200, F("text/plain"), F("OK"));
+  
+  // Đợi một chút để response được gửi đi hoàn toàn
+  delay(200);
   
   isAPMode = false;
   connecting = true;
   connect_start_ms = millis();
   connectToWiFi();
+  
+  Serial.println(F("WiFi connection process started..."));
 }
 
 // Thêm handler để check status kết nối
@@ -3150,7 +3324,8 @@ void handleStatus() {
   if (WiFi.status() == WL_CONNECTED) {
     status = "connected";
     ip = WiFi.localIP().toString();
-  } else if (millis() - connect_start_ms > 10000) {
+  } else if (millis() - connect_start_ms > 20000) {
+    // Tăng timeout lên 20 giây để khớp với logic kết nối
     status = "failed";
     ip = WiFi.softAPIP().toString();
   }
@@ -3241,16 +3416,16 @@ void startAP() {
   delay(100);
   bool connected = WiFi.softAP(ssid.c_str(), password.c_str());
   if (connected) {
-    Serial.print("AP IP address: ");
+    Serial.print(F("AP IP address: "));
     Serial.println(WiFi.softAPIP());
     
     // Setup mDNS
     if (MDNS.begin("esp32")) {
-      Serial.println("mDNS responder started: http://esp32.local");
+      Serial.println(F("mDNS responder started: http://esp32.local"));
       MDNS.addService("http", "tcp", 80);
     }
   } else {
-    Serial.println("Failed to start AP");
+    Serial.println(F("Failed to start AP"));
   }
   
   isAPMode = true;
@@ -3260,20 +3435,34 @@ void startAP() {
   // This ensures LCD and web interface use local sensor data
   coreiot_data.is_valid = false;
   use_coreiot_data = false;
-  Serial.println("=== SWITCHED TO AP MODE ===");
-  Serial.println("[AP MODE] CoreIOT data invalidated - using local sensor data");
-  Serial.println("[AP MODE] Website will use /api/sensor-data endpoint");
-  Serial.println("[AP MODE] LCD will display local sensor readings");
-  Serial.println("========================");
+  Serial.println(F("=== SWITCHED TO AP MODE ==="));
+  Serial.println(F("[AP MODE] CoreIOT data invalidated - using local sensor data"));
+  Serial.println(F("[AP MODE] Website will use /api/sensor-data endpoint"));
+  Serial.println(F("[AP MODE] LCD will display local sensor readings"));
+  Serial.println(F("========================"));
 }
 
 void connectToWiFi() {
+  // Disconnect from AP mode first if needed
+  if (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA) {
+    WiFi.softAPdisconnect(true);
+    delay(200);
+  }
+  
+  // Set to STA mode
   WiFi.mode(WIFI_STA);
+  delay(200);
+  
+  // Disconnect any existing connection
+  WiFi.disconnect();
+  delay(100);
+  
+  // Begin connection
   WiFi.begin(wifi_ssid.c_str(), wifi_password.c_str());
-  Serial.print("Connecting to: ");
-  Serial.print(wifi_ssid.c_str());
-  Serial.print(" Password: ");
-  Serial.println(wifi_password.c_str());
+  Serial.print(F("Connecting to: "));
+  Serial.print(wifi_ssid);
+  Serial.print(F(" Password: "));
+  Serial.println(wifi_password.length() > 0 ? F("***") : F("(empty)"));
 }
 
 // ========== Main task ==========
@@ -3286,10 +3475,10 @@ void main_server_task(void *pvParameters){
   // Load LCD refresh rate on startup
   loadLCDRefreshRate();
   
-  Serial.println("Web Server Task Started");
+  Serial.println(F("Web Server Task Started"));
   
   // Tự động thử STA mode trước
-  Serial.println("Trying STA mode first...");
+  Serial.println(F("Trying STA mode first..."));
   isAPMode = false;
   connecting = true;
   connect_start_ms = millis();
@@ -3299,12 +3488,12 @@ void main_server_task(void *pvParameters){
   unsigned long waitStart = millis();
   while (millis() - waitStart < 8000) {
     if (WiFi.status() == WL_CONNECTED) {
-      Serial.print("✅ STA Connected! IP: ");
+      Serial.print(F("✅ STA Connected! IP: "));
       Serial.println(WiFi.localIP());
       
       // Setup mDNS for STA mode
       if (MDNS.begin("esp32")) {
-        Serial.println("mDNS responder started: http://esp32.local");
+        Serial.println(F("mDNS responder started: http://esp32.local"));
         MDNS.addService("http", "tcp", 80);
       }
       
@@ -3319,7 +3508,7 @@ void main_server_task(void *pvParameters){
   
   // Nếu STA thất bại → chuyển AP
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("❌ STA failed → Starting AP mode");
+    Serial.println(F("❌ STA failed → Starting AP mode"));
     startAP();
     isAPMode = true;
     connecting = false;
@@ -3331,20 +3520,36 @@ void main_server_task(void *pvParameters){
   
   // Setup server
   setupServer();
-  Serial.println("Web server ready!");
+  Serial.println(F("Web server ready!"));
   
   while(1){
     server.handleClient();
     
     // Handle WiFi connection logic
     if (connecting) {
+      unsigned long elapsed = millis() - connect_start_ms;
+      
+      // Log progress mỗi 3 giây
+      static unsigned long lastLog = 0;
+      if (elapsed - lastLog > 3000) {
+        Serial.print(F("[WiFi] Connecting... ("));
+        Serial.print(elapsed / 1000);
+        Serial.println(F("s elapsed)"));
+        Serial.print(F("  Status: "));
+        Serial.println(WiFi.status());
+        lastLog = elapsed;
+      }
+      
       if (WiFi.status() == WL_CONNECTED) {
-        Serial.print("Connected to WiFi! IP: ");
+        Serial.println(F("✅ Connected to WiFi!"));
+        Serial.print(F("  IP: "));
         Serial.println(WiFi.localIP());
+        Serial.print(F("  SSID: "));
+        Serial.println(wifi_ssid);
         
         // Setup mDNS
         if (MDNS.begin("esp32")) {
-          Serial.println("mDNS responder started: http://esp32.local");
+          Serial.println(F("mDNS responder started: http://esp32.local"));
           MDNS.addService("http", "tcp", 80);
         }
         
@@ -3352,8 +3557,13 @@ void main_server_task(void *pvParameters){
         xSemaphoreGive(xBinarySemaphoreInternet);
         isAPMode = false;
         connecting = false;
-      } else if (millis() - connect_start_ms > 10000) {
-        Serial.println("WiFi connection timeout, switching back to AP mode");
+      } else if (elapsed > 20000) {
+        // Tăng timeout lên 20 giây để đủ thời gian kết nối
+        Serial.println(F("WiFi connection timeout (20s), switching back to AP mode"));
+        Serial.print("SSID tried: ");
+        Serial.println(wifi_ssid);
+        Serial.print("WiFi status: ");
+        Serial.println(WiFi.status());
         startAP();
         setupServer();
         connecting = false;
@@ -3399,11 +3609,31 @@ void main_server_task(void *pvParameters){
       SensorData_t sensor_data;
       getSensorData(&sensor_data);
       
+      // Get pump state và mode atomically (thread-safe)
+      bool current_pump_state;
+      bool current_pump_mode;
+      if (xSemaphoreTake(xMutexPumpControl, portMAX_DELAY) == pdTRUE) {
+        current_pump_state = pump_state;
+        current_pump_mode = pump_manual_control;
+        xSemaphoreGive(xMutexPumpControl);
+      } else {
+        // Fallback if mutex fails
+        current_pump_state = pump_state;
+        current_pump_mode = pump_manual_control;
+      }
+      
+      // Escape quotes in message string for JSON
+      String escaped_message = glob_anomaly_message;
+      escaped_message.replace("\"", "\\\"");
+      escaped_message.replace("\\", "\\\\");
+      
       String sensorJson = "{\"temperature\":" + String(sensor_data.temperature) + 
                          ",\"humidity\":" + String(sensor_data.humidity) + 
                          ",\"soil\":" + String(sensor_data.soil) + 
                          ",\"anomaly_score\":" + String(glob_anomaly_score, 4) + 
-                         ",\"anomaly_message\":\"" + glob_anomaly_message + "\"}";
+                         ",\"anomaly_message\":\"" + escaped_message + "\"" +
+                         ",\"pump_state\":" + String(current_pump_state ? "true" : "false") +
+                         ",\"pump_mode\":\"" + String(current_pump_mode ? "MANUAL" : "AUTO") + "\"}";
       
       // Thử MQTT trước, nếu không có thì dùng HTTP
       if (client.connected()) {

@@ -11,8 +11,8 @@ bool web_led2_control_enabled = false;
 
 String ssid = "L06 - NHÓM 7!!!";
 String password = "12345678";
-String wifi_ssid = "kai";
-String wifi_password = "123123123";
+String wifi_ssid = "";
+String wifi_password = "";
 String location_label = "Thành phố Hồ Chí Minh";
 boolean isWifiConnected = false;
 SemaphoreHandle_t xBinarySemaphoreInternet = xSemaphoreCreateBinary();
