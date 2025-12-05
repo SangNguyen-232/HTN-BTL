@@ -127,7 +127,7 @@ String mainPage() {
       <meta charset='utf-8'>
       <meta name='viewport' content='width=device-width, initial-scale=1.0'>
       <title>L06 - NHÓM 7</title>
-      <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    
       <style>
         :root{
           --bg:#0f172a;
@@ -1187,15 +1187,14 @@ String mainPage() {
         const isAPMode = window.location.hostname === '192.168.4.1' || window.location.hostname.includes('192.168.4');
         let currentRefreshRate = isAPMode ? 3 : 5; // 3s for AP mode, 5s for STA mode
         
-        // Chart variables
-        let sensorChart = null;
-        const maxDataPoints = 50; // Giữ tối đa 50 điểm dữ liệu
+        // Dữ liệu cho custom chart
         let chartData = {
           labels: [],
           temperature: [],
           humidity: [],
           soil: []
         };
+        const maxDataPoints = 50;
         
         // Load saved refresh rate from localStorage
         function loadRefreshRate() {
@@ -1424,112 +1423,91 @@ String mainPage() {
         updateTime();
         setInterval(updateTime, 1000);
         
-        // Initialize Chart
-        function initChart() {
-          const ctx = document.getElementById('sensorChart').getContext('2d');
+        // Cấu hình Canvas
+        const canvas = document.getElementById('sensorChart');
+        const ctx = canvas.getContext('2d');
+
+        // Hàm vẽ đường line (Helper function)
+        function drawLine(dataArray, color, stepX, mapY, padding) {
+          ctx.beginPath();
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 2;
+          ctx.lineJoin = 'round';
           
-          sensorChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-              labels: chartData.labels,
-              datasets: [
-                {
-                  label: 'Temperature (°C)',
-                  data: chartData.temperature,
-                  borderColor: 'rgba(251, 191, 36, 0.95)',
-                  backgroundColor: 'rgba(251, 191, 36, 0.1)',
-                  tension: 0.4,
-                  fill: false,
-                  borderWidth: 2
-                },
-                {
-                  label: 'Humidity (%)',
-                  data: chartData.humidity,
-                  borderColor: 'rgba(125, 211, 252, 0.95)',
-                  backgroundColor: 'rgba(125, 211, 252, 0.1)',
-                  tension: 0.4,
-                  fill: false,
-                  borderWidth: 2
-                },
-                {
-                  label: 'Soil Moisture (%)',
-                  data: chartData.soil,
-                  borderColor: 'rgba(74, 222, 128, 0.95)',
-                  backgroundColor: 'rgba(74, 222, 128, 0.1)',
-                  tension: 0.4,
-                  fill: false,
-                  borderWidth: 2
-                }
-              ]
-            },
-            options: {
-              responsive: true,
-              maintainAspectRatio: false,
-              plugins: {
-                legend: {
-                  labels: {
-                    color: '#e5e7eb',
-                    font: {
-                      size: 12,
-                      weight: '600'
-                    }
-                  },
-                  position: 'top',
-                },
-                tooltip: {
-                  backgroundColor: 'rgba(17, 24, 39, 0.9)',
-                  titleColor: '#e5e7eb',
-                  bodyColor: '#e5e7eb',
-                  borderColor: 'rgba(255, 255, 255, 0.1)',
-                  borderWidth: 1,
-                  padding: 12,
-                  displayColors: true
-                }
-              },
-              scales: {
-                x: {
-                  ticks: {
-                    color: '#9ca3af',
-                    maxRotation: 45,
-                    minRotation: 0
-                  },
-                  grid: {
-                    color: 'rgba(255, 255, 255, 0.05)'
-                  }
-                },
-                y: {
-                  ticks: {
-                    color: '#9ca3af'
-                  },
-                  grid: {
-                    color: 'rgba(255, 255, 255, 0.05)'
-                  }
-                }
-              },
-              interaction: {
-                intersect: false,
-                mode: 'index'
-              }
-            }
-          });
+          for (let i = 0; i < dataArray.length; i++) {
+            let x = padding + (i * stepX);
+            let y = mapY(dataArray[i]);
+            
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+        }
+
+        // Hàm vẽ biểu đồ thủ công
+        function drawCustomChart() {
+          const w = canvas.width;
+          const h = canvas.height;
+          const padding = 30;
+
+          ctx.clearRect(0, 0, w, h);
+          
+          // Vẽ khung trục Y (0-100)
+          ctx.beginPath();
+          ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+          ctx.lineWidth = 1;
+          for(let i=0; i<=5; i++) {
+            let y = h - padding - (i * (h - 2*padding) / 5);
+            ctx.moveTo(padding, y);
+            ctx.lineTo(w - padding, y);
+            ctx.fillStyle = '#6b7280';
+            ctx.font = '10px Arial';
+            ctx.fillText(i * 20, 5, y + 3); 
+          }
+          ctx.stroke();
+
+          const mapY = (val) => {
+             if(val > 100) val = 100;
+             if(val < 0) val = 0;
+             return h - padding - (val / 100) * (h - 2*padding);
+          };
+          
+          const len = chartData.labels.length;
+          if (len < 2) return; 
+
+          const stepX = (w - 2*padding) / (maxDataPoints - 1);
+
+          // Vẽ 3 đường dữ liệu
+          drawLine(chartData.temperature, 'rgba(251, 191, 36, 0.95)', stepX, mapY, padding);
+          drawLine(chartData.humidity, 'rgba(125, 211, 252, 0.95)', stepX, mapY, padding);
+          drawLine(chartData.soil, 'rgba(74, 222, 128, 0.95)', stepX, mapY, padding);
+        }
+
+        // Hàm resize canvas (Quan trọng cho Responsive)
+        function resizeCanvas() {
+          const parent = canvas.parentElement;
+          canvas.width = parent.clientWidth;
+          canvas.height = parent.clientHeight;
+          drawCustomChart(); 
+        }
+
+        // Hàm khởi tạo Canvas (Thay thế initChart cũ)
+        function initChart() {
+          resizeCanvas();
+          window.addEventListener('resize', resizeCanvas);
         }
         
-        // Update chart with new data
+        // Cập nhật dữ liệu (Thay thế updateChart cũ)
         function updateChart(temp, hum, soil) {
-          if (!sensorChart) return;
-          
           const now = new Date();
-          const timeLabel = now.getHours().toString().padStart(2, '0') + ':' + 
-                           now.getMinutes().toString().padStart(2, '0') + ':' + 
-                           now.getSeconds().toString().padStart(2, '0');
+          const timeLabel = now.getHours() + ':' + now.getMinutes();
           
-          // Thêm dữ liệu mới
           chartData.labels.push(timeLabel);
           chartData.temperature.push(parseFloat(temp));
           chartData.humidity.push(parseFloat(hum));
           chartData.soil.push(parseFloat(soil));
           
-          // Giữ chỉ tối đa maxDataPoints điểm
+          // Logic giới hạn 50 điểm (Circular Buffer)
           if (chartData.labels.length > maxDataPoints) {
             chartData.labels.shift();
             chartData.temperature.shift();
@@ -1537,8 +1515,8 @@ String mainPage() {
             chartData.soil.shift();
           }
           
-          // Cập nhật chart
-          sensorChart.update('none'); // 'none' mode để update không có animation
+          // Gọi hàm vẽ thủ công
+          drawCustomChart();
         }
         
         function togglePump() {
