@@ -597,6 +597,19 @@ void coreiot_task(void *pvParameters){
     static bool initialized = false;
 
     while(1){
+        // Skip CoreIOT operations in AP mode
+        if (isAPMode) {
+            // In AP mode, disconnect from CoreIOT and invalidate data
+            if (client.connected()) {
+                Serial.println("[CoreIOT] AP Mode detected - disconnecting from CoreIOT");
+                client.disconnect();
+                coreiot_data.is_valid = false;
+                use_coreiot_data = false;
+            }
+            vTaskDelay(5000 / portTICK_PERIOD_MS);  // Check every 5 seconds
+            continue;
+        }
+        
         // Check if reconnect is needed (credentials changed)
         if (coreiot_reconnect_needed) {
             Serial.println("CoreIOT credentials changed - reconnecting...");

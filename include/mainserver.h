@@ -10,7 +10,7 @@
 #define BOOT_PIN 0
 //extern WebServer server;
 
-//extern bool isAPMode;
+extern bool isAPMode;
 
 // CoreIOT data structure
 struct CoreIOTData {

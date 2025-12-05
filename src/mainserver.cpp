@@ -35,6 +35,13 @@ String mainPage() {
   
   // AP MODE: Sử dụng dữ liệu local trực tiếp, không cần CoreIOT
   if (isAPMode) {
+    // Debug: Print AP mode status
+    static unsigned long lastAPDebug = 0;
+    if (millis() - lastAPDebug > 5000) {  // Every 5 seconds
+      Serial.println("[WEB] AP Mode - using local sensor data");
+      lastAPDebug = millis();
+    }
+    
     // Lấy dữ liệu từ local sensors (thread-safe)
     SensorData_t sensor_data;
     getSensorData(&sensor_data);
@@ -1175,7 +1182,9 @@ String mainPage() {
         let sensorUpdateInterval;
         let pumpUpdateInterval;
         let dataSourceUpdateInterval;
-        let currentRefreshRate = 5; // seconds
+        // Thiết lập refresh rate dựa trên mode
+        const isAPMode = window.location.hostname === '192.168.4.1' || window.location.hostname.includes('192.168.4');
+        let currentRefreshRate = isAPMode ? 3 : 5; // 3s for AP mode, 5s for STA mode
         
         // Chart variables
         let sensorChart = null;
@@ -1235,19 +1244,43 @@ String mainPage() {
           
           // Update sensor data
           sensorUpdateInterval = setInterval(() => {
-            fetch('/sensors')
+            // Determine if we're in AP mode
+            const isAPMode = window.location.hostname === '192.168.4.1' || window.location.hostname.includes('192.168.4');
+            const endpoint = isAPMode ? '/api/sensor-data' : '/sensors';
+            
+            fetch(endpoint)
              .then(res => res.json())
              .then(d => {
-               const isLoading = (d.source === 'loading');
+               // Handle different data formats between AP mode and STA mode
+               let temp, hum, soil, score, message, source;
+               
+               if (isAPMode) {
+                 // AP mode: direct sensor data
+                 temp = d.temperature !== undefined ? d.temperature.toFixed(2) : '--';
+                 hum = d.humidity !== undefined ? d.humidity.toFixed(2) : '--';
+                 soil = d.soil !== undefined ? d.soil.toFixed(1) : '--';
+                 score = d.anomaly_score !== undefined ? d.anomaly_score.toFixed(4) : '--';
+                 message = d.anomaly_message || 'Normal';
+                 source = 'local';
+               } else {
+                 // STA mode: existing format
+                 temp = d.temp;
+                 hum = d.hum;
+                 soil = d.soil;
+                 score = d.score;
+                 message = d.message;
+                 source = d.source;
+               }
+               const isLoading = (source === 'loading');
                
                // Cập nhật giá trị và đơn vị
                const tempEl = document.getElementById('temp');
                const humEl = document.getElementById('hum');
                const soilEl = document.getElementById('soil');
                
-               tempEl.innerText = d.temp;
-               humEl.innerText = d.hum;
-               soilEl.innerText = (d.soil === '--') ? '--' : formatSoil(d.soil);
+               tempEl.innerText = temp;
+               humEl.innerText = hum;
+               soilEl.innerText = (soil === '--') ? '--' : formatSoil(soil);
                
                // Cập nhật đơn vị
                const tempUnit = tempEl.parentElement.querySelector('.unit');
@@ -1255,21 +1288,26 @@ String mainPage() {
                const soilUnit = soilEl.parentElement.querySelector('.unit');
                
                if (tempUnit) {
-                 tempUnit.innerHTML = (d.temp === '--') ? '' : '°C';
+                 tempUnit.innerHTML = (temp === '--') ? '' : '°C';
                }
                if (humUnit) {
-                 humUnit.innerHTML = (d.hum === '--') ? '' : '%';
+                 humUnit.innerHTML = (hum === '--') ? '' : '%';
                }
                if (soilUnit) {
-                 soilUnit.innerHTML = (d.soil === '--') ? '' : '%';
+                 soilUnit.innerHTML = (soil === '--') ? '' : '%';
                }
                
-               document.getElementById('score').innerText = d.score;
-               document.getElementById('message').innerText = d.message;
+               document.getElementById('score').innerText = score;
+               document.getElementById('message').innerText = message;
                
                // Cập nhật chart nếu có dữ liệu hợp lệ
-               if (!isLoading && d.temp !== '--' && d.hum !== '--' && d.soil !== '--') {
-                 updateChart(d.temp, d.hum, d.soil);
+               if (!isLoading && temp !== '--' && hum !== '--' && soil !== '--') {
+                 updateChart(parseFloat(temp), parseFloat(hum), parseFloat(soil));
+               }
+               
+               // Debug log for AP mode
+               if (isAPMode && temp !== '--') {
+                 console.log('AP Mode - Updated:', {temp, hum, soil, score, message});
                }
                
                // Thêm/xóa class loading
@@ -3006,6 +3044,47 @@ void handlePumpThresholds() {
   }
 }
 
+// Handler để cung cấp dữ liệu cảm biến cho biểu đồ trong AP mode
+void handleSensorDataAPI() {
+  // Lấy dữ liệu cảm biến local (thread-safe)
+  SensorData_t sensor_data;
+  getSensorData(&sensor_data);
+  
+  // Lấy pump state (thread-safe)
+  bool current_pump_state;
+  bool current_pump_mode;
+  if (xSemaphoreTake(xMutexPumpControl, portMAX_DELAY) == pdTRUE) {
+    current_pump_state = pump_state;
+    current_pump_mode = pump_manual_control;
+    xSemaphoreGive(xMutexPumpControl);
+  } else {
+    current_pump_state = pump_state;
+    current_pump_mode = pump_manual_control;
+  }
+  
+  // Tạo JSON response với dữ liệu cảm biến local
+  String json = "{";
+  json += "\"temperature\":" + String(sensor_data.temperature, 2) + ",";
+  json += "\"humidity\":" + String(sensor_data.humidity, 2) + ",";
+  json += "\"soil\":" + String(sensor_data.soil, 1) + ",";
+  json += "\"anomaly_score\":" + String(glob_anomaly_score, 4) + ",";
+  json += "\"anomaly_message\":\"" + glob_anomaly_message + "\",";
+  json += "\"pump_state\":" + String(current_pump_state ? "true" : "false") + ",";
+  json += "\"pump_mode\":\"" + String(current_pump_mode ? "MANUAL" : "AUTO") + "\",";
+  json += "\"timestamp\":" + String(millis()) + ",";
+  json += "\"mode\":\"AP\"";
+  json += "}";
+  
+  server.send(200, "application/json", json);
+  
+  // Debug logging every 10 requests
+  static int request_count = 0;
+  if (++request_count >= 10) {
+    Serial.println("[AP MODE] Sent sensor data: " + json);
+    request_count = 0;
+  }
+}
+
 void handleSettings() { 
   server.send(200, "text/html", settingsPage()); 
 }
@@ -3094,6 +3173,7 @@ void setupServer() {
   server.on("/pump", HTTP_GET, handlePump);
   server.on("/pumpstatus", HTTP_GET, handlePumpStatus);
   server.on("/pumpthresholds", HTTP_GET, handlePumpThresholds);
+  server.on("/api/sensor-data", HTTP_GET, handleSensorDataAPI);  // API for charts in AP mode
   server.on("/settings", HTTP_GET, handleSettings);
   server.on("/connect", HTTP_GET, handleConnect);
   server.on("/status", HTTP_GET, handleStatus);
@@ -3137,6 +3217,16 @@ void startAP() {
   
   isAPMode = true;
   connecting = false;
+  
+  // Reset CoreIOT data validity when entering AP mode
+  // This ensures LCD and web interface use local sensor data
+  coreiot_data.is_valid = false;
+  use_coreiot_data = false;
+  Serial.println("=== SWITCHED TO AP MODE ===");
+  Serial.println("[AP MODE] CoreIOT data invalidated - using local sensor data");
+  Serial.println("[AP MODE] Website will use /api/sensor-data endpoint");
+  Serial.println("[AP MODE] LCD will display local sensor readings");
+  Serial.println("========================");
 }
 
 void connectToWiFi() {
@@ -3193,6 +3283,9 @@ void main_server_task(void *pvParameters){
     isAPMode = true;
     connecting = false;
     isWifiConnected = false;
+    // Reset CoreIOT data validity when switching to AP mode
+    coreiot_data.is_valid = false;
+    use_coreiot_data = false;
   }
   
   // Setup server
@@ -3224,6 +3317,9 @@ void main_server_task(void *pvParameters){
         setupServer();
         connecting = false;
         isWifiConnected = false;
+        // Reset CoreIOT data validity when switching back to AP mode
+        coreiot_data.is_valid = false;
+        use_coreiot_data = false;
       }
     }
     
@@ -3231,6 +3327,29 @@ void main_server_task(void *pvParameters){
     if (!isAPMode && WiFi.isConnected() && (millis() - last_coreiot_fetch > COREIOT_FETCH_INTERVAL)) {
       fetchCoreIOTData();
       last_coreiot_fetch = millis();
+    }
+    
+    // Debug logging trong AP mode (mỗi 30 giây)
+    if (isAPMode) {
+      static unsigned long lastAPLog = 0;
+      if (millis() - lastAPLog > 30000) {
+        SensorData_t sensor_data;
+        getSensorData(&sensor_data);
+        bool current_pump_state = pump_state;
+        bool current_pump_mode = pump_manual_control;
+        
+        Serial.println("[AP MODE STATUS]");
+        Serial.println("  Temperature: " + String(sensor_data.temperature, 2) + "°C");
+        Serial.println("  Humidity: " + String(sensor_data.humidity, 2) + "%");
+        Serial.println("  Soil: " + String(sensor_data.soil, 1) + "%");
+        Serial.println("  Anomaly Score: " + String(glob_anomaly_score, 4));
+        Serial.println("  Anomaly Message: " + glob_anomaly_message);
+        Serial.println("  Pump State: " + String(current_pump_state ? "ON" : "OFF"));
+        Serial.println("  Pump Mode: " + String(current_pump_mode ? "MANUAL" : "AUTO"));
+        Serial.println("  Uptime: " + String(millis() / 1000) + "s");
+        Serial.println("================");
+        lastAPLog = millis();
+      }
     }
     
     // Gửi local sensor data lên CoreIOT định kỳ (mỗi 30 giây)

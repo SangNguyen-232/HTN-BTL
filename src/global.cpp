@@ -126,9 +126,6 @@ void loadPumpThresholds() {
   pump_threshold_max = preferences.getFloat("threshold_max", 80.0f);
   preferences.end();
   
-  Serial.println("Loaded pump thresholds:");
-  Serial.println("  Min: " + String(pump_threshold_min) + "%");
-  Serial.println("  Max: " + String(pump_threshold_max) + "%");
 }
 
 // Save pump thresholds to preferences
