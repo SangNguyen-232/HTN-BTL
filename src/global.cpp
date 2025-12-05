@@ -27,6 +27,9 @@ SemaphoreHandle_t xMutexPumpControl = xSemaphoreCreateMutex();
 float pump_threshold_min = 20.0f;
 float pump_threshold_max = 80.0f;
 
+// LCD and sensor refresh rate (default 3 seconds)
+int lcd_refresh_rate = 3;
+
 // CoreIOT credentials - defaults
 String coreiot_server = "app.coreiot.io";
 String coreiot_token = "";
@@ -142,4 +145,25 @@ void savePumpThresholds(float min, float max) {
   Serial.println("Saved pump thresholds:");
   Serial.println("  Min: " + String(pump_threshold_min) + "%");
   Serial.println("  Max: " + String(pump_threshold_max) + "%");
+}
+
+// Load LCD refresh rate from preferences
+void loadLCDRefreshRate() {
+  preferences.begin("display", true);  // Read-only mode
+  lcd_refresh_rate = preferences.getInt("lcd_refresh", 3);  // Default 3 seconds
+  preferences.end();
+  
+  Serial.println("Loaded LCD refresh rate: " + String(lcd_refresh_rate) + "s");
+}
+
+// Save LCD refresh rate to preferences
+void saveLCDRefreshRate(int rate) {
+  preferences.begin("display", false);  // Read-write mode
+  preferences.putInt("lcd_refresh", rate);
+  preferences.end();
+  
+  // Update global variable
+  lcd_refresh_rate = rate;
+  
+  Serial.println("Saved LCD refresh rate: " + String(lcd_refresh_rate) + "s");
 }

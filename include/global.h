@@ -46,6 +46,9 @@ extern SemaphoreHandle_t xMutexPumpControl;
 extern float pump_threshold_min;
 extern float pump_threshold_max;
 
+// LCD and sensor refresh rate (in seconds)
+extern int lcd_refresh_rate;
+
 // CoreIOT credentials
 extern String coreiot_server;
 extern String coreiot_token;
@@ -65,4 +68,8 @@ void saveCoreIOTCredentials(const String& server, const String& token, const Str
 // Pump threshold management functions
 void loadPumpThresholds();
 void savePumpThresholds(float min, float max);
+
+// LCD refresh rate management functions
+void loadLCDRefreshRate();
+void saveLCDRefreshRate(int rate);
 #endif

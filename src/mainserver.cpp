@@ -1113,6 +1113,7 @@ String mainPage() {
                 <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path>
               </svg>
               Data Refresh Rate
+              <div style="font-size:11px;color:var(--muted);margin-top:2px;">Web & LCD Display</div>
             </div>
             <div class="refresh-current" id="refresh-current">5s</div>
           </div>
@@ -1223,6 +1224,26 @@ String mainPage() {
           currentRefreshRate = newRate;
           localStorage.setItem('sensorRefreshRate', currentRefreshRate.toString());
           updateRefreshDisplay();
+          
+          // Update LCD refresh rate to match web refresh rate
+          fetch('/api/lcd-refresh', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: 'rate=' + encodeURIComponent(newRate)
+          })
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              console.log('LCD refresh rate updated to', data.rate + 's');
+            } else {
+              console.error('Failed to update LCD refresh rate:', data.error);
+            }
+          })
+          .catch(error => {
+            console.error('Error updating LCD refresh rate:', error);
+          });
           
           // Clear existing intervals
           if (sensorUpdateInterval) clearInterval(sensorUpdateInterval);
@@ -1664,6 +1685,25 @@ String mainPage() {
         // Initialize refresh rate and start updates
         loadRefreshRate();
         initChart();
+        
+        // Sync LCD refresh rate with web refresh rate on page load
+        fetch('/api/lcd-refresh', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: 'rate=' + encodeURIComponent(currentRefreshRate)
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            console.log('LCD refresh rate synced to', data.rate + 's');
+          }
+        })
+        .catch(error => {
+          console.error('Error syncing LCD refresh rate:', error);
+        });
+        
         startDataUpdates();
         
         // Update data source indicator immediately
@@ -3085,6 +3125,25 @@ void handleSensorDataAPI() {
   }
 }
 
+// Handler để cập nhật LCD refresh rate
+void handleLCDRefreshRate() {
+  if (server.hasArg("rate")) {
+    int newRate = server.arg("rate").toInt();
+    
+    // Validate rate (1-60 seconds)
+    if (newRate >= 1 && newRate <= 60) {
+      saveLCDRefreshRate(newRate);
+      String json = "{\"success\":true,\"rate\":" + String(lcd_refresh_rate) + ",\"message\":\"LCD refresh rate updated to " + String(lcd_refresh_rate) + "s\"}";
+      server.send(200, "application/json", json);
+      Serial.println("[LCD] Refresh rate updated to " + String(lcd_refresh_rate) + "s");
+    } else {
+      server.send(400, "application/json", "{\"success\":false,\"error\":\"Rate must be between 1 and 60 seconds\"}");
+    }
+  } else {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Missing rate parameter\"}");
+  }
+}
+
 void handleSettings() { 
   server.send(200, "text/html", settingsPage()); 
 }
@@ -3174,6 +3233,7 @@ void setupServer() {
   server.on("/pumpstatus", HTTP_GET, handlePumpStatus);
   server.on("/pumpthresholds", HTTP_GET, handlePumpThresholds);
   server.on("/api/sensor-data", HTTP_GET, handleSensorDataAPI);  // API for charts in AP mode
+  server.on("/api/lcd-refresh", HTTP_POST, handleLCDRefreshRate);  // API to update LCD refresh rate
   server.on("/settings", HTTP_GET, handleSettings);
   server.on("/connect", HTTP_GET, handleConnect);
   server.on("/status", HTTP_GET, handleStatus);
@@ -3244,6 +3304,9 @@ void main_server_task(void *pvParameters){
   
   // Load pump thresholds on startup
   loadPumpThresholds();
+  
+  // Load LCD refresh rate on startup
+  loadLCDRefreshRate();
   
   Serial.println("Web Server Task Started");
   

@@ -13,6 +13,10 @@ void temp_humi_monitor(void *pvParameters) {
     lcd.print("Tem:--.--C|Soil:");  
     lcd.setCursor(0, 1); 
     lcd.print("Hum:--.--%|00%");  
+    
+    // Load LCD refresh rate from preferences
+    loadLCDRefreshRate();
+    Serial.println("[LCD] Using refresh rate: " + String(lcd_refresh_rate) + "s");
 
     while (1) {
         dht20.read();
@@ -95,6 +99,10 @@ void temp_humi_monitor(void *pvParameters) {
             
         }
         
-        vTaskDelay(3000 / portTICK_PERIOD_MS); 
+        
+        // Sử dụng LCD refresh rate thay vì hard-code 3 giây
+        // Kiểm tra và sử dụng giá trị refresh rate hiện tại (có thể đã được cập nhật)
+        int current_refresh_rate = lcd_refresh_rate; // Atomic read
+        vTaskDelay((current_refresh_rate * 1000) / portTICK_PERIOD_MS); 
     }
 }
