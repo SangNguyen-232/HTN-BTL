@@ -206,46 +206,60 @@ function startDataUpdates() {
     const data = await fetchCoreIOTData();
     
     if (data) {
-      // Parse dữ liệu từ CoreIOT
-      // CoreIOT trả về dữ liệu theo format của ESP32 đã gửi lên
-      let temp = data.temperature !== undefined ? parseFloat(data.temperature).toFixed(2) : '--';
-      let hum = data.humidity !== undefined ? parseFloat(data.humidity).toFixed(2) : '--';
-      let soil = data.soil !== undefined ? parseFloat(data.soil).toFixed(1) : '--';
-      let score = data.anomaly_score !== undefined ? parseFloat(data.anomaly_score).toFixed(4) : '--';
-      let message = data.anomaly_message || 'Normal';
+      // Parse dữ liệu từ CoreIOT (ThingsBoard format)
+      // Dữ liệu có thể ở format: {temperature: value} hoặc {temperature: {value: value, ts: timestamp}}
+      let temp = '--', hum = '--', soil = '--', score = '--', message = 'Normal';
       
-      // Cập nhật giá trị và đơn vị
-      const tempEl = document.getElementById('temp');
-      const humEl = document.getElementById('hum');
-      const soilEl = document.getElementById('soil');
-      
-      if (tempEl) tempEl.innerText = temp;
-      if (humEl) humEl.innerText = hum;
-      if (soilEl) soilEl.innerText = (soil === '--') ? '--' : formatSoil(soil);
-      
-      // Cập nhật đơn vị
-      const tempUnit = tempEl ? tempEl.parentElement.querySelector('.unit') : null;
-      const humUnit = humEl ? humEl.parentElement.querySelector('.unit') : null;
-      const soilUnit = soilEl ? soilEl.parentElement.querySelector('.unit') : null;
-      
-      if (tempUnit) {
-        tempUnit.innerHTML = (temp === '--') ? '' : '°C';
-      }
-      if (humUnit) {
-        humUnit.innerHTML = (hum === '--') ? '' : '%';
-      }
-      if (soilUnit) {
-        soilUnit.innerHTML = (soil === '--') ? '' : '%';
+      // Xử lý temperature
+      if (data.temperature !== undefined) {
+        const tempVal = (typeof data.temperature === 'object' && data.temperature.value !== undefined) 
+          ? data.temperature.value : data.temperature;
+        temp = parseFloat(tempVal).toFixed(2);
       }
       
-      const scoreEl = document.getElementById('score');
-      const messageEl = document.getElementById('message');
-      if (scoreEl) scoreEl.innerText = score;
-      if (messageEl) messageEl.innerText = message;
+      // Xử lý humidity
+      if (data.humidity !== undefined) {
+        const humVal = (typeof data.humidity === 'object' && data.humidity.value !== undefined) 
+          ? data.humidity.value : data.humidity;
+        hum = parseFloat(humVal).toFixed(2);
+      }
+      
+      // Xử lý soil moisture (có thể có tên soil_moisture_value hoặc soil)
+      if (data.soil_moisture_value !== undefined) {
+        const soilVal = (typeof data.soil_moisture_value === 'object' && data.soil_moisture_value.value !== undefined) 
+          ? data.soil_moisture_value.value : data.soil_moisture_value;
+        soil = parseFloat(soilVal).toFixed(1);
+      } else if (data.soil !== undefined) {
+        const soilVal = (typeof data.soil === 'object' && data.soil.value !== undefined) 
+          ? data.soil.value : data.soil;
+        soil = parseFloat(soilVal).toFixed(1);
+      }
+      
+      // Xử lý anomaly score
+      if (data.anomaly_score !== undefined) {
+        const scoreVal = (typeof data.anomaly_score === 'object' && data.anomaly_score.value !== undefined) 
+          ? data.anomaly_score.value : data.anomaly_score;
+        score = parseFloat(scoreVal).toFixed(4);
+      }
+      
+      // Xử lý anomaly message
+      if (data.anomaly_message !== undefined) {
+        const msgVal = (typeof data.anomaly_message === 'object' && data.anomaly_message.value !== undefined) 
+          ? data.anomaly_message.value : data.anomaly_message;
+        message = String(msgVal) || 'Normal';
+      }
+      
+      // Cập nhật hiển thị bằng hàm chung
+      const tempVal = (temp === '--') ? undefined : parseFloat(temp);
+      const humVal = (hum === '--') ? undefined : parseFloat(hum);
+      const soilVal = (soil === '--') ? undefined : parseFloat(soil);
+      const scoreVal = (score === '--') ? undefined : parseFloat(score);
+      
+      updateSensorDisplay(tempVal, humVal, soilVal, scoreVal, message);
       
       // Cập nhật chart nếu có dữ liệu hợp lệ
-      if (temp !== '--' && hum !== '--' && soil !== '--') {
-        updateChart(parseFloat(temp), parseFloat(hum), parseFloat(soil));
+      if (tempVal !== undefined && humVal !== undefined && soilVal !== undefined) {
+        updateChart(tempVal, humVal, soilVal);
       }
       
       // Cập nhật data source indicator
@@ -257,15 +271,6 @@ function startDataUpdates() {
       if (text) {
         text.textContent = 'CoreIOT';
       }
-      
-      // Xóa class loading
-      const elements = ['temp', 'hum', 'soil', 'score', 'message'];
-      elements.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) {
-          el.classList.remove('loading');
-        }
-      });
     } else {
       // Không lấy được dữ liệu, hiển thị loading
       const elements = ['temp', 'hum', 'soil', 'score', 'message'];
@@ -305,6 +310,59 @@ function startDataUpdates() {
       }
     }
   }, 5000); // Tăng lên 5 giây thay vì 1 giây để giảm số request
+}
+
+// Hàm cập nhật hiển thị sensor data (tương tự ESP32 mainserver)
+function updateSensorDisplay(temperature, humidity, soil, anomaly_score = 0, anomaly_message = 'Normal') {
+  // Format giá trị hiển thị
+  const tempStr = (temperature !== undefined && !isNaN(temperature)) ? parseFloat(temperature).toFixed(2) : '--';
+  const humStr = (humidity !== undefined && !isNaN(humidity)) ? parseFloat(humidity).toFixed(2) : '--';
+  const soilStr = (soil !== undefined && !isNaN(soil)) ? parseFloat(soil).toFixed(1) : '--';
+  const scoreStr = (anomaly_score !== undefined && !isNaN(anomaly_score)) ? parseFloat(anomaly_score).toFixed(4) : '--';
+  const messageStr = anomaly_message || 'Normal';
+  
+  // Cập nhật giá trị hiển thị
+  const tempEl = document.getElementById('temp');
+  const humEl = document.getElementById('hum');
+  const soilEl = document.getElementById('soil');
+  const scoreEl = document.getElementById('score');
+  const messageEl = document.getElementById('message');
+  
+  if (tempEl) tempEl.innerText = tempStr;
+  if (humEl) humEl.innerText = humStr;
+  if (soilEl) soilEl.innerText = (soilStr === '--') ? '--' : formatSoil(soilStr);
+  if (scoreEl) scoreEl.innerText = scoreStr;
+  if (messageEl) messageEl.innerText = messageStr;
+  
+  // Cập nhật đơn vị
+  const tempUnit = tempEl ? tempEl.parentElement.querySelector('.unit') : null;
+  const humUnit = humEl ? humEl.parentElement.querySelector('.unit') : null;
+  const soilUnit = soilEl ? soilEl.parentElement.querySelector('.unit') : null;
+  
+  if (tempUnit) {
+    tempUnit.innerHTML = (tempStr === '--') ? '' : '°C';
+  }
+  if (humUnit) {
+    humUnit.innerHTML = (humStr === '--') ? '' : '%';
+  }
+  if (soilUnit) {
+    soilUnit.innerHTML = (soilStr === '--') ? '' : '%';
+  }
+  
+  // Xóa class loading khi có dữ liệu hợp lệ
+  const elements = ['temp', 'hum', 'soil', 'score', 'message'];
+  elements.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      if (tempStr !== '--' || humStr !== '--' || soilStr !== '--') {
+        el.classList.remove('loading');
+      } else {
+        el.classList.add('loading');
+      }
+    }
+  });
+  
+  console.log(`[Display] Cập nhật hiển thị: T=${tempStr}°C, H=${humStr}%, S=${soilStr}%, Score=${scoreStr}, Msg=${messageStr}`);
 }
 
 // Control LED qua CoreIOT RPC
@@ -539,4 +597,88 @@ document.addEventListener('click', function(e) {
     sidebar.classList.remove('open');
   }
 });
+
+// Modal Functions
+function showConfigModal() {
+  const modal = document.getElementById('configModal');
+  const serverInput = document.getElementById('serverInput');
+  const tokenInput = document.getElementById('tokenInput');
+  
+  // Load current config
+  if (COREIOT_CONFIG.isConfigured()) {
+    serverInput.value = COREIOT_CONFIG.server || '';
+    tokenInput.value = COREIOT_CONFIG.token || '';
+  }
+  
+  modal.classList.add('show');
+}
+
+function hideConfigModal() {
+  const modal = document.getElementById('configModal');
+  modal.classList.remove('show');
+}
+
+function saveConfig() {
+  const serverInput = document.getElementById('serverInput');
+  const tokenInput = document.getElementById('tokenInput');
+  
+  const server = serverInput.value.trim();
+  const token = tokenInput.value.trim();
+  
+  if (!server || !token) {
+    alert('Vui lòng nhập đầy đủ Server URL và Token!');
+    return;
+  }
+  
+  // Validate server URL format
+  if (!server.startsWith('http://') && !server.startsWith('https://')) {
+    if (confirm('Server URL không có http:// hoặc https://. Thêm https:// tự động?')) {
+      serverInput.value = 'https://' + server;
+    } else {
+      return;
+    }
+  }
+  
+  // Save config
+  try {
+    COREIOT_CONFIG.configure(serverInput.value.trim(), token);
+    alert('Cấu hình đã được lưu thành công!');
+    hideConfigModal();
+    
+    // Restart data updates with new config
+    startDataUpdates();
+    
+    console.log('[Config] CoreIOT configuration saved:', {
+      server: serverInput.value.trim(),
+      token: token ? token.substring(0, 8) + '...' : 'empty'
+    });
+  } catch (error) {
+    console.error('[Config] Error saving configuration:', error);
+    alert('Lỗi khi lưu cấu hình: ' + error.message);
+  }
+}
+
+function clearConfig() {
+  if (confirm('Bạn có chắc muốn xóa cấu hình CoreIOT?')) {
+    try {
+      COREIOT_CONFIG.configure('', '');
+      localStorage.removeItem('coreiot_server');
+      localStorage.removeItem('coreiot_token');
+      
+      alert('Đã xóa cấu hình CoreIOT!');
+      hideConfigModal();
+      
+      // Update UI to show disconnected state
+      const dot = document.getElementById('source-dot');
+      const text = document.getElementById('source-text');
+      if (dot) dot.className = 'source-dot';
+      if (text) text.textContent = 'Not Configured';
+      
+      console.log('[Config] CoreIOT configuration cleared');
+    } catch (error) {
+      console.error('[Config] Error clearing configuration:', error);
+      alert('Lỗi khi xóa cấu hình: ' + error.message);
+    }
+  }
+}
 

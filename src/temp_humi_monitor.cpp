@@ -1,7 +1,7 @@
 #include "temp_humi_monitor.h"
 #include "global.h"  
 #include "lcd.h"
-#include "mainserver.h"  // For CoreIOT data structure
+#include "mainserver.h" 
 DHT20 dht20;
 
 void temp_humi_monitor(void *pvParameters) {
@@ -48,56 +48,38 @@ void temp_humi_monitor(void *pvParameters) {
             xSemaphoreGive(xMutexPumpControl);
         }
 
-        // In AP mode or when CoreIOT data is not available, use local sensor data
-        if (isAPMode || !coreiot_data.is_valid) {
-            // Display local sensor data
-            lcd.setCursor(0, 0);  
-            lcd.print("Tem:");
-            if (sensor_data.temperature < 0) {
-                lcd.print("--.--");
-            } else {
-                lcd.print(sensor_data.temperature, 2);  
-            }
-            lcd.print("C|Soil:");  
-            
-            lcd.setCursor(0, 1); 
-            lcd.print("Hum:");
-            if (sensor_data.humidity < 0) {
-                lcd.print("--.--");
-            } else {
-                lcd.print(sensor_data.humidity, 2);  
-            }
-            lcd.print("%|");
-            
-            int soil_int = int(sensor_data.soil);  
-            if (soil_int < 10) {
-                lcd.print("0");  
-            }
-            lcd.print(soil_int);
-            lcd.print("%");
+        // Always display local sensor data (since adafruit_data is not being updated)
+        // Clear previous values by printing spaces
+        lcd.clear();
         
-        } 
-        // In STA mode with valid CoreIOT data
-        else if (coreiot_data.is_valid) {
-            // Display CoreIOT data
-            lcd.setCursor(0, 0);  
-            lcd.print("Tem:");
-            lcd.print(coreiot_data.temperature, 2);  
-            lcd.print("C|Soil:");  
-            
-            lcd.setCursor(0, 1); 
-            lcd.print("Hum:");
-            lcd.print(coreiot_data.humidity, 2);  
-            lcd.print("%|");
-            
-            int soil_int = int(coreiot_data.soil);  
-            if (soil_int < 10) {
-                lcd.print("0");  
-            }
-            lcd.print(soil_int);
-            lcd.print("%");
-            
+        // Line 1: Temperature and Soil
+        lcd.setCursor(0, 0);  
+        lcd.print("Tem:");
+        if (sensor_data.temperature < 0) {
+            lcd.print("--.--");
+        } else {
+            char tempStr[6];
+            dtostrf(sensor_data.temperature, 5, 2, tempStr);  // Format as "XX.XX"
+            lcd.print(tempStr);
         }
+        lcd.print("C|Soil:");  
+        
+        // Line 2: Humidity and Soil percentage
+        lcd.setCursor(0, 1); 
+        lcd.print("Hum:");
+        if (sensor_data.humidity < 0) {
+            lcd.print("--.--");
+        } else {
+            char humStr[6];
+            dtostrf(sensor_data.humidity, 5, 2, humStr);  // Format as "XX.XX"
+            lcd.print(humStr);
+        }
+        lcd.print("%|");
+        
+        int soil_int = int(sensor_data.soil);  
+        char soilStr[4];
+        sprintf(soilStr, "%02d%%", soil_int);  // Format as "XX%"
+        lcd.print(soilStr);
         
         
         // Sử dụng LCD refresh rate thay vì hard-code 3 giây

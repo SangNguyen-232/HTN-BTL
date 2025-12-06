@@ -12,8 +12,8 @@
 
 extern bool isAPMode;
 
-// CoreIOT data structure
-struct CoreIOTData {
+// Adafruit IO data structure
+struct AdafruitData {
   float temperature = 0.0;
   float humidity = 0.0;
   float soil = 0.0;
@@ -27,9 +27,9 @@ struct CoreIOTData {
   bool is_valid = false;
 };
 
-// External references for CoreIOT data (defined in mainserver.cpp)
-extern CoreIOTData coreiot_data;
-extern bool use_coreiot_data;
+// External references for Adafruit IO data (defined in mainserver.cpp)
+extern AdafruitData adafruit_data;
+extern bool use_adafruit_data;
 
 String mainPage();
 String settingsPage();

@@ -4,15 +4,17 @@ const COREIOT_CONFIG = {
   server: localStorage.getItem('coreiot_server') || 'app.coreiot.io',
   token: localStorage.getItem('coreiot_token') || '',
   
-  // API endpoints của CoreIOT
-  // Format: http://{server}/api/v1/{token}/telemetry/latest
+  // API endpoints của CoreIOT (ThingsBoard format)
+  // Format: http://{server}/api/v1/{token}/keys/timeseries
   endpoints: {
-    // Lấy telemetry mới nhất
-    telemetry: '/api/v1/{token}/telemetry/latest',
+    // Lấy telemetry mới nhất (ThingsBoard format)
+    telemetry: '/api/v1/{token}/keys/timeseries',
     // Lấy attributes (pump state, mode, etc)
     attributes: '/api/v1/{token}/attributes',
     // Gửi RPC commands (điều khiển pump, LED)
-    rpc: '/api/v1/{token}/rpc'
+    rpc: '/api/v1/{token}/rpc/twoway',
+    // Lấy latest telemetry values
+    latest: '/api/v1/{token}/keys/timeseries/latest'
   },
   
   // Helper function để build URL
@@ -32,8 +34,31 @@ const COREIOT_CONFIG = {
   // Kiểm tra đã config chưa
   isConfigured: function() {
     return this.server && this.token && this.server.length > 0 && this.token.length > 0;
+  },
+  
+  // Cấu hình server và token
+  configure: function(server, token) {
+    this.server = server || '';
+    this.token = token || '';
+    this.save();
   }
 };
+
+// Auto-load configuration từ localStorage
+(function() {
+  const savedServer = localStorage.getItem('coreiot_server');
+  const savedToken = localStorage.getItem('coreiot_token');
+  
+  if (savedServer && savedToken) {
+    try {
+      COREIOT_CONFIG.server = savedServer;
+      COREIOT_CONFIG.token = savedToken;
+      console.log('[Config] Loaded CoreIOT configuration from localStorage');
+    } catch (error) {
+      console.warn('[Config] Failed to load saved configuration:', error);
+    }
+  }
+})();
 
 // Function để lấy dữ liệu từ CoreIOT
 let lastErrorTime = 0;
@@ -46,42 +71,46 @@ async function fetchCoreIOTData() {
   }
   
   try {
-    // Thử nhiều format endpoint khác nhau
-    const endpointFormats = [
-      '/api/v1/{token}/telemetry/latest',
-      '/api/v1/{token}/telemetry',
-      '/api/plugins/telemetry/{token}/values/latest',
-      '/api/plugins/telemetry/{token}/values'
-    ];
+    // Thử lấy dữ liệu từ ThingsBoard API
+    // Format: GET /api/v1/{accessToken}/keys/timeseries/latest?keys=temperature,humidity,soil_moisture_value,anomaly_score,anomaly_message
+    const keys = 'temperature,humidity,soil_moisture_value,anomaly_score,anomaly_message';
+    const protocol = COREIOT_CONFIG.server.startsWith('http') ? '' : 'https://';
+    const telemetryUrl = `${protocol}${COREIOT_CONFIG.server}/api/v1/${COREIOT_CONFIG.token}/keys/timeseries/latest?keys=${keys}`;
     
     let telemetryData = null;
     let lastError = null;
     
-    // Thử từng format endpoint
-    for (const endpointFormat of endpointFormats) {
-      try {
-        const protocol = COREIOT_CONFIG.server.startsWith('http') ? '' : 'https://';
-        const telemetryUrl = `${protocol}${COREIOT_CONFIG.server}${endpointFormat.replace('{token}', COREIOT_CONFIG.token)}`;
-        
-        const telemetryResponse = await fetch(telemetryUrl, {
-          method: 'GET',
-          headers: {
-            'Accept': 'application/json'
-          }
-        });
-        
-        if (telemetryResponse.ok) {
-          telemetryData = await telemetryResponse.json();
-          errorCount = 0; // Reset error count khi thành công
-          break; // Thành công, dừng thử các format khác
-        } else if (telemetryResponse.status !== 404) {
-          // Nếu không phải 404, có thể là lỗi khác (401, 403, etc)
-          lastError = `HTTP ${telemetryResponse.status}`;
+    try {
+      const telemetryResponse = await fetch(telemetryUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json'
         }
-      } catch (err) {
-        lastError = err.message;
-        continue; // Thử format tiếp theo
+      });
+      
+      if (telemetryResponse.ok) {
+        telemetryData = await telemetryResponse.json();
+        errorCount = 0; // Reset error count khi thành công
+      } else {
+        lastError = `HTTP ${telemetryResponse.status}`;
+        
+        // Thử fallback với format khác
+        const fallbackUrl = `${protocol}${COREIOT_CONFIG.server}/api/v1/${COREIOT_CONFIG.token}/keys/timeseries?keys=${keys}&startTs=0&endTs=${Date.now()}&limit=1&agg=NONE`;
+        const fallbackResponse = await fetch(fallbackUrl);
+        if (fallbackResponse.ok) {
+          const fallbackData = await fallbackResponse.json();
+          // Chuyển đổi format từ time-series sang latest values
+          telemetryData = {};
+          Object.keys(fallbackData).forEach(key => {
+            if (fallbackData[key] && fallbackData[key].length > 0) {
+              telemetryData[key] = fallbackData[key][0].value;
+            }
+          });
+          errorCount = 0;
+        }
       }
+    } catch (err) {
+      lastError = err.message;
     }
     
     if (!telemetryData) {
@@ -98,28 +127,45 @@ async function fetchCoreIOTData() {
     // Lấy attributes (pump state, mode) - optional
     let attributesData = {};
     try {
-      const attributesFormats = [
-        '/api/v1/{token}/attributes',
-        '/api/plugins/telemetry/{token}/attributes'
-      ];
+      const attributesUrl = `${protocol}${COREIOT_CONFIG.server}/api/v1/${COREIOT_CONFIG.token}/attributes?clientKeys=pump_state,pump_mode&sharedKeys=pump_state,pump_mode`;
+      const attributesResponse = await fetch(attributesUrl);
       
-      for (const attrFormat of attributesFormats) {
-        const protocol = COREIOT_CONFIG.server.startsWith('http') ? '' : 'https://';
-        const attributesUrl = `${protocol}${COREIOT_CONFIG.server}${attrFormat.replace('{token}', COREIOT_CONFIG.token)}`;
-        const attributesResponse = await fetch(attributesUrl);
-        
-        if (attributesResponse.ok) {
-          attributesData = await attributesResponse.json();
-          break;
+      if (attributesResponse.ok) {
+        const attrResponse = await attributesResponse.json();
+        // Merge client và shared attributes
+        if (attrResponse.client) {
+          Object.assign(attributesData, attrResponse.client);
+        }
+        if (attrResponse.shared) {
+          Object.assign(attributesData, attrResponse.shared);
         }
       }
     } catch (err) {
       // Attributes là optional, không cần log error
     }
     
-    // Merge dữ liệu
+    // Xử lý và merge dữ liệu
+    const processedData = {};
+    
+    if (telemetryData) {
+      // Convert ThingsBoard format to simple key-value
+      Object.keys(telemetryData).forEach(key => {
+        if (telemetryData[key] && typeof telemetryData[key] === 'object' && telemetryData[key].value !== undefined) {
+          processedData[key] = telemetryData[key].value;
+        } else {
+          processedData[key] = telemetryData[key];
+        }
+      });
+      
+      // Map soil_moisture_value to soil for compatibility
+      if (processedData.soil_moisture_value !== undefined) {
+        processedData.soil = processedData.soil_moisture_value;
+      }
+    }
+    
+    // Merge với attributes data
     return {
-      ...telemetryData,
+      ...processedData,
       ...attributesData
     };
   } catch (error) {

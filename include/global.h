@@ -5,9 +5,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
-#include <PubSubClient.h>
-
-extern PubSubClient client;
 
 // Sensor data structure for atomic read
 typedef struct {
@@ -21,11 +18,15 @@ extern float glob_humidity;
 extern float glob_anomaly_score;
 extern String glob_anomaly_message;
 
+// Sensor variables (used by adafruit.cpp and mainserver.cpp)
+extern float temperature;
+extern float humidity;
+extern float soil_moisture_value;
+extern float anomaly_score;
+extern String anomaly_message;
+
 extern bool web_led1_control_enabled; 
 extern bool web_led2_control_enabled;
-
-extern float glob_anomaly_score;
-extern String glob_anomaly_message;
 
 extern String ssid;
 extern String password;
@@ -39,8 +40,18 @@ extern SemaphoreHandle_t xBinarySemaphoreInternet;
 extern float glob_soil;
 extern bool pump_manual_control;
 extern bool pump_state;
+extern String pump_mode;  // "AUTO" or "MANUAL"
 extern SemaphoreHandle_t xMutexSensorData;
 extern SemaphoreHandle_t xMutexPumpControl;
+
+// Sensor data mutex (used by adafruit.cpp)
+extern SemaphoreHandle_t dataMutex;
+
+// Serial output mutex (prevent task interleaving)
+extern SemaphoreHandle_t xMutexSerial;
+
+// Pin definitions
+#define PIN_PUMP 5  // Define pump pin
 
 // Pump threshold settings (for AUTO mode)
 extern float pump_threshold_min;
@@ -49,21 +60,17 @@ extern float pump_threshold_max;
 // LCD and sensor refresh rate (in seconds)
 extern int lcd_refresh_rate;
 
-// CoreIOT credentials
-extern String coreiot_server;
-extern String coreiot_token;
-extern String coreiot_client_id;
-extern String coreiot_username;
-extern String coreiot_password;
-extern bool coreiot_use_token;  // true = use token, false = use username/password
-extern bool coreiot_reconnect_needed;  // Flag to trigger reconnect when credentials change
+// Adafruit IO credentials
+extern String adafruit_username;
+extern String adafruit_key;
+extern bool adafruit_reconnect_needed;  // Flag to trigger reconnect when credentials change
 
 // Helper function to get all sensor data atomically (thread-safe)
 void getSensorData(SensorData_t* data);
 
 // Config management functions
-void loadCoreIOTCredentials();
-void saveCoreIOTCredentials(const String& server, const String& token, const String& clientId, const String& username, const String& password, bool useToken);
+void loadAdafruitCredentials();
+void saveAdafruitCredentials(const String& username, const String& key);
 
 // Pump threshold management functions
 void loadPumpThresholds();

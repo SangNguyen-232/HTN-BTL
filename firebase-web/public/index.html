@@ -44,10 +44,19 @@
       <div class="container">
         <div class="header">
           <div class="title">Dashboard</div>
-          <div class="data-source" id="data-source">
-            <div class="source-indicator">
-              <span class="source-dot" id="source-dot"></span>
-              <span class="source-text" id="source-text">Not Configured</span>
+          <div class="header-actions">
+            <button class="config-btn" onclick="showConfigModal()" title="Cấu hình CoreIOT">
+              <svg viewBox="0 0 24 24" width="16" height="16">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="m12 1 3 6 6 3-6 3-3 6-3-6-6-3 6-3z"></path>
+              </svg>
+              Config
+            </button>
+            <div class="data-source" id="data-source">
+              <div class="source-indicator">
+                <span class="source-dot" id="source-dot"></span>
+                <span class="source-text" id="source-text">Not Configured</span>
+              </div>
             </div>
           </div>
         </div>
@@ -310,6 +319,43 @@
         </div>
         
         <div class="footer">EMBEDDED SYSTEM - ASSIGNMENT</div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- CoreIOT Configuration Modal -->
+  <div class="modal-overlay" id="configModal" onclick="hideConfigModal()">
+    <div class="modal-content" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h3>Cấu hình CoreIOT (ThingsBoard)</h3>
+        <button class="modal-close" onclick="hideConfigModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="serverInput">Server URL:</label>
+          <input type="text" id="serverInput" placeholder="ví dụ: https://demo.thingsboard.io hoặc IP:PORT" />
+          <small>Nhập URL của ThingsBoard server (bao gồm http:// hoặc https://)</small>
+        </div>
+        <div class="form-group">
+          <label for="tokenInput">Device Access Token:</label>
+          <input type="text" id="tokenInput" placeholder="Nhập Device Access Token từ ThingsBoard" />
+          <small>Token này được tạo trong ThingsBoard Device → Copy access token</small>
+        </div>
+        <div class="form-info">
+          <h4>Hướng dẫn:</h4>
+          <ol>
+            <li>Truy cập ThingsBoard server của bạn</li>
+            <li>Vào Devices → Chọn device ESP32</li>
+            <li>Copy "Access token" từ device details</li>
+            <li>Paste vào ô Token ở trên</li>
+          </ol>
+          <p><strong>Lưu ý:</strong> ESP32 cần đã kết nối và gửi dữ liệu lên ThingsBoard để web app có thể hiển thị.</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="hideConfigModal()">Hủy</button>
+        <button class="btn btn-primary" onclick="saveConfig()">Lưu cấu hình</button>
+        <button class="btn btn-danger" onclick="clearConfig()" style="margin-left: auto;">Xóa cấu hình</button>
       </div>
     </div>
   </div>

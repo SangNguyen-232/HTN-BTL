@@ -6,6 +6,13 @@ float glob_humidity = 0;
 float glob_anomaly_score = 0;
 String glob_anomaly_message = "Normal";
 
+// Sensor variables (used by adafruit.cpp and mainserver.cpp)
+float temperature = 0;
+float humidity = 0;
+float soil_moisture_value = 0;
+float anomaly_score = 0;
+String anomaly_message = "Normal";
+
 bool web_led1_control_enabled = false;
 bool web_led2_control_enabled = false;
 
@@ -20,8 +27,10 @@ SemaphoreHandle_t xBinarySemaphoreInternet = xSemaphoreCreateBinary();
 float glob_soil = 0;
 bool pump_manual_control = false;
 bool pump_state = false;
+String pump_mode = "AUTO";  // Default to AUTO mode
 SemaphoreHandle_t xMutexSensorData = xSemaphoreCreateMutex();
 SemaphoreHandle_t xMutexPumpControl = xSemaphoreCreateMutex();
+SemaphoreHandle_t dataMutex = xSemaphoreCreateMutex();  // Used by adafruit.cpp
 
 // Pump threshold settings (default values)
 float pump_threshold_min = 20.0f;
@@ -30,78 +39,49 @@ float pump_threshold_max = 80.0f;
 // LCD and sensor refresh rate (default 3 seconds)
 int lcd_refresh_rate = 3;
 
-// CoreIOT credentials - defaults
-String coreiot_server = "app.coreiot.io";
-String coreiot_token = "";
-String coreiot_client_id = "ESP32Client";  // Default client ID
-String coreiot_username = "";
-String coreiot_password = "";
-bool coreiot_use_token = true;  // Default to token authentication
-bool coreiot_reconnect_needed = false;  // Flag to trigger reconnect
+// Adafruit IO credentials - defaults
+String adafruit_username = "";
+String adafruit_key = "";
+bool adafruit_reconnect_needed = false;  // Flag to trigger reconnect
 
 Preferences preferences;
 
-void loadCoreIOTCredentials() {
-  preferences.begin("coreiot", true);  // Read-only mode
-  coreiot_server = preferences.getString("server", "app.coreiot.io");
-  coreiot_token = preferences.getString("token", "");
-  coreiot_client_id = preferences.getString("client_id", "ESP32Client");
-  coreiot_username = preferences.getString("username", "");
-  coreiot_password = preferences.getString("password", "");
-  coreiot_use_token = preferences.getBool("use_token", true);
+void loadAdafruitCredentials() {
+  preferences.begin("adafruit", true);  // Read-only mode
+  adafruit_username = preferences.getString("username", "");
+  adafruit_key = preferences.getString("key", "");
   preferences.end();
   
-  Serial.println("Loaded CoreIOT config:");
-  Serial.println("  Server: " + coreiot_server);
-  Serial.println("  Use Token: " + String(coreiot_use_token ? "Yes" : "No"));
-  if (coreiot_use_token) {
-    if (coreiot_token.length() > 0) {
-      Serial.println("  Token: ***" + coreiot_token.substring(coreiot_token.length()-4));
-    } else {
-      Serial.println("  Token: Not set");
-    }
+  Serial.println("Loaded Adafruit IO config:");
+  Serial.print("  Username: ");
+  Serial.println(adafruit_username.length() > 0 ? adafruit_username : String("Not set"));
+  Serial.print("  Key: ");
+  if (adafruit_key.length() > 0) {
+    Serial.println("***" + adafruit_key.substring(adafruit_key.length()-4));
   } else {
-    Serial.print("  Client ID: ");
-    Serial.println(coreiot_client_id.length() > 0 ? coreiot_client_id : String("ESP32Client"));
-    Serial.print("  Username: ");
-    Serial.println(coreiot_username.length() > 0 ? coreiot_username : String("Not set"));
-    Serial.print("  Password: ");
-    Serial.println(coreiot_password.length() > 0 ? String("***") : String("Not set"));
+    Serial.println("Not set");
   }
 }
 
-void saveCoreIOTCredentials(const String& server, const String& token, const String& clientId, const String& username, const String& password, bool useToken) {
+void saveAdafruitCredentials(const String& username, const String& key) {
   // Check if credentials actually changed
-  bool changed = (coreiot_server != server || 
-                  coreiot_token != token || 
-                  coreiot_client_id != clientId ||
-                  coreiot_username != username || 
-                  coreiot_password != password || 
-                  coreiot_use_token != useToken);
+  bool changed = (adafruit_username != username || adafruit_key != key);
   
-  preferences.begin("coreiot", false);  // Read-write mode
-  preferences.putString("server", server);
-  preferences.putString("token", token);
-  preferences.putString("client_id", clientId);
+  preferences.begin("adafruit", false);  // Read-write mode
   preferences.putString("username", username);
-  preferences.putString("password", password);
-  preferences.putBool("use_token", useToken);
+  preferences.putString("key", key);
   preferences.end();
   
   // Update global variables
-  coreiot_server = server;
-  coreiot_token = token;
-  coreiot_client_id = clientId;
-  coreiot_username = username;
-  coreiot_password = password;
-  coreiot_use_token = useToken;
+  adafruit_username = username;
+  adafruit_key = key;
   
   // Set flag to trigger reconnect if credentials changed
   if (changed) {
-    coreiot_reconnect_needed = true;
+    adafruit_reconnect_needed = true;
   }
   
-  Serial.println("Saved CoreIOT credentials");
+  Serial.println("Saved Adafruit IO credentials");
   if (changed) {
     Serial.println("Credentials changed - reconnect will be triggered");
   }
