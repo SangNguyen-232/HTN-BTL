@@ -1543,10 +1543,11 @@ String mainPage() {
           ctx.font = '11px Arial';
           ctx.textAlign = 'right';
           ctx.textBaseline = 'middle';
-          
-          for(let i=0; i<=8; i++) {
-            let y = paddingTop + (i * chartHeight / 8);
-            let value = 80 - (i * 10);
+
+          // Vẽ được dồng 10 phần (0, 10, ..., 100)
+          for(let i=0; i<=10; i++) {
+            let y = paddingTop + (i * chartHeight / 10);
+            let value = 100 - (i * 10);
             
             // Vẽ đường lưới ngang
             ctx.beginPath();
@@ -1577,9 +1578,9 @@ String mainPage() {
           const mapY = (val) => {
              if(val > 100) val = 100;
              if(val < 0) val = 0;
-             // Map từ 0-100 sang 0-80 trên biểu đồ
-             let mappedVal = (val / 100) * 80;
-             return paddingTop + chartHeight - (mappedVal / 80) * chartHeight;
+             // Map giá trị 0-100 trực tiếp sang tọa độ Y
+             // Giá trị 100 ở đỉnh (paddingTop), giá trị 0 ở đáy (paddingTop + chartHeight)
+             return paddingTop + chartHeight - (val / 100) * chartHeight;
           };
           
           const len = chartData.labels.length;

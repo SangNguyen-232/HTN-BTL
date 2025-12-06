@@ -7,5 +7,6 @@
         "*.py": "python",
         "system_error": "cpp"
     },
-    "cmake.sourceDirectory": "D:/HTN-BTL/lib/ArduinoJson/src"
+    "cmake.sourceDirectory": "D:/HTN-BTL/lib/ArduinoJson/src",
+    "cmake.ignoreCMakeListsMissing": true
 }
