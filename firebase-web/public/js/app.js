@@ -7,8 +7,8 @@ let currentRefreshRate = 5; // Default 5 seconds
 // Kiểm tra config CoreIOT khi load trang
 window.addEventListener('DOMContentLoaded', function() {
   if (!COREIOT_CONFIG.isConfigured()) {
-    // Hiển thị dialog để user nhập CoreIOT config
-    showConfigDialog();
+    // Thử lấy config từ ESP32 trước, nếu không được thì hiển thị dialog
+    tryLoadFromESP32();
   } else {
     // Đã có config, bắt đầu load dữ liệu
     startDataUpdates();
@@ -24,19 +24,110 @@ window.addEventListener('DOMContentLoaded', function() {
   setInterval(updateTime, 1000);
 });
 
+// Thử lấy CoreIOT config từ ESP32
+async function tryLoadFromESP32() {
+  // Lấy ESP32 IP từ localStorage hoặc prompt
+  let esp32IP = localStorage.getItem('esp32_ip');
+  
+  if (!esp32IP) {
+    // Thử các IP phổ biến của ESP32
+    const commonIPs = ['192.168.4.1', 'esp32.local'];
+    let found = false;
+    
+    for (const ip of commonIPs) {
+      try {
+        const url = `http://${ip}/coreiot-config`;
+        const response = await fetch(url, { timeout: 2000 });
+        if (response.ok) {
+          const data = await response.json();
+          if (data.configured && data.server && data.token) {
+            COREIOT_CONFIG.server = data.server;
+            COREIOT_CONFIG.token = data.token;
+            COREIOT_CONFIG.save();
+            localStorage.setItem('esp32_ip', ip);
+            startDataUpdates();
+            found = true;
+            return;
+          }
+        }
+      } catch (e) {
+        // Continue to next IP
+      }
+    }
+    
+    if (!found) {
+      // Không tìm thấy ESP32, hiển thị dialog để user nhập
+      showConfigDialog();
+    }
+  } else {
+    // Đã có ESP32 IP, thử fetch
+    try {
+      const url = `http://${esp32IP}/coreiot-config`;
+      const response = await fetch(url, { timeout: 2000 });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.configured && data.server && data.token) {
+          COREIOT_CONFIG.server = data.server;
+          COREIOT_CONFIG.token = data.token;
+          COREIOT_CONFIG.save();
+          startDataUpdates();
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Không thể kết nối ESP32, sử dụng dialog');
+    }
+    
+    // Nếu không fetch được, hiển thị dialog
+    showConfigDialog();
+  }
+}
+
 // Hiển thị dialog để cấu hình CoreIOT
 function showConfigDialog() {
+  const esp32IP = prompt('Nhập ESP32 IP (để lấy token tự động) hoặc để trống để nhập thủ công:\nVí dụ: 192.168.1.100 hoặc esp32.local', localStorage.getItem('esp32_ip') || '');
+  
+  if (esp32IP && esp32IP.trim().length > 0) {
+    // Thử lấy từ ESP32
+    fetch(`http://${esp32IP.trim()}/coreiot-config`)
+      .then(response => response.json())
+      .then(data => {
+        if (data.configured && data.server && data.token) {
+          COREIOT_CONFIG.server = data.server;
+          COREIOT_CONFIG.token = data.token;
+          COREIOT_CONFIG.save();
+          localStorage.setItem('esp32_ip', esp32IP.trim());
+          alert('Đã lấy cấu hình CoreIOT từ ESP32 thành công!');
+          startDataUpdates();
+        } else {
+          alert('ESP32 chưa được cấu hình CoreIOT. Vui lòng cấu hình trên ESP32 trước.');
+          showManualConfigDialog();
+        }
+      })
+      .catch(err => {
+        console.error('Lỗi khi lấy config từ ESP32:', err);
+        alert('Không thể kết nối ESP32. Vui lòng nhập thủ công.');
+        showManualConfigDialog();
+      });
+  } else {
+    // Nhập thủ công
+    showManualConfigDialog();
+  }
+}
+
+// Hiển thị dialog nhập thủ công
+function showManualConfigDialog() {
   const server = prompt('Nhập CoreIOT Server (ví dụ: app.coreiot.io):', COREIOT_CONFIG.server);
   if (!server) {
     alert('Vui lòng nhập CoreIOT Server để tiếp tục!');
-    showConfigDialog();
+    showManualConfigDialog();
     return;
   }
   
   const token = prompt('Nhập CoreIOT Access Token:');
   if (!token) {
     alert('Vui lòng nhập CoreIOT Access Token để tiếp tục!');
-    showConfigDialog();
+    showManualConfigDialog();
     return;
   }
   
@@ -184,10 +275,20 @@ function startDataUpdates() {
           el.classList.add('loading');
         }
       });
+      
+      // Cập nhật data source indicator
+      const dot = document.getElementById('source-dot');
+      const text = document.getElementById('source-text');
+      if (dot) {
+        dot.className = 'source-dot local';
+      }
+      if (text) {
+        text.textContent = 'No Connection';
+      }
     }
   }, intervalMs);
   
-  // Update pump status từ CoreIOT attributes
+  // Update pump status từ CoreIOT attributes (giảm frequency để tránh spam)
   pumpUpdateInterval = setInterval(async () => {
     const data = await fetchCoreIOTData();
     
@@ -203,7 +304,7 @@ function startDataUpdates() {
         updatePumpMode('pump-mode-status', pumpMode);
       }
     }
-  }, 1000);
+  }, 5000); // Tăng lên 5 giây thay vì 1 giây để giảm số request
 }
 
 // Control LED qua CoreIOT RPC

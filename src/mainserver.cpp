@@ -3392,6 +3392,17 @@ void setupServer() {
   server.on("/connect", HTTP_GET, handleConnect);
   server.on("/status", HTTP_GET, handleStatus);
   server.on("/coreiot", HTTP_POST, handleCoreIOTConfig);
+  server.on("/coreiot-config", HTTP_GET, []() {
+    // Trả về CoreIOT config để frontend Firebase có thể lấy token
+    loadCoreIOTCredentials();
+    String json = "{";
+    json += "\"server\":\"" + coreiot_server + "\",";
+    json += "\"token\":\"" + coreiot_token + "\",";
+    json += "\"use_token\":" + String(coreiot_use_token ? "true" : "false") + ",";
+    json += "\"configured\":" + String((coreiot_server.length() > 0 && coreiot_token.length() > 0) ? "true" : "false");
+    json += "}";
+    server.send(200, "application/json", json);
+  });
   server.on("/coreiot-data", HTTP_POST, handleCoreIOTData);
   server.on("/data-source", HTTP_GET, []() {
     // THEO CHU TRÌNH MỚI: Luôn hiển thị nguồn dữ liệu là CoreIOT nếu đã có dữ liệu

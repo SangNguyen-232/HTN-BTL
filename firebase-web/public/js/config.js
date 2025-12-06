@@ -36,30 +36,85 @@ const COREIOT_CONFIG = {
 };
 
 // Function để lấy dữ liệu từ CoreIOT
+let lastErrorTime = 0;
+let errorCount = 0;
+const ERROR_LOG_INTERVAL = 5000; // Chỉ log error mỗi 5 giây
+
 async function fetchCoreIOTData() {
   if (!COREIOT_CONFIG.isConfigured()) {
-    console.error('CoreIOT chưa được cấu hình');
     return null;
   }
   
   try {
-    // Lấy telemetry mới nhất
-    const telemetryUrl = COREIOT_CONFIG.getUrl('telemetry');
-    const telemetryResponse = await fetch(telemetryUrl);
+    // Thử nhiều format endpoint khác nhau
+    const endpointFormats = [
+      '/api/v1/{token}/telemetry/latest',
+      '/api/v1/{token}/telemetry',
+      '/api/plugins/telemetry/{token}/values/latest',
+      '/api/plugins/telemetry/{token}/values'
+    ];
     
-    if (!telemetryResponse.ok) {
-      throw new Error(`HTTP error! status: ${telemetryResponse.status}`);
+    let telemetryData = null;
+    let lastError = null;
+    
+    // Thử từng format endpoint
+    for (const endpointFormat of endpointFormats) {
+      try {
+        const protocol = COREIOT_CONFIG.server.startsWith('http') ? '' : 'https://';
+        const telemetryUrl = `${protocol}${COREIOT_CONFIG.server}${endpointFormat.replace('{token}', COREIOT_CONFIG.token)}`;
+        
+        const telemetryResponse = await fetch(telemetryUrl, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json'
+          }
+        });
+        
+        if (telemetryResponse.ok) {
+          telemetryData = await telemetryResponse.json();
+          errorCount = 0; // Reset error count khi thành công
+          break; // Thành công, dừng thử các format khác
+        } else if (telemetryResponse.status !== 404) {
+          // Nếu không phải 404, có thể là lỗi khác (401, 403, etc)
+          lastError = `HTTP ${telemetryResponse.status}`;
+        }
+      } catch (err) {
+        lastError = err.message;
+        continue; // Thử format tiếp theo
+      }
     }
     
-    const telemetryData = await telemetryResponse.json();
+    if (!telemetryData) {
+      // Tất cả format đều fail, log error (giới hạn frequency)
+      const now = Date.now();
+      if (now - lastErrorTime > ERROR_LOG_INTERVAL) {
+        errorCount++;
+        console.warn(`[CoreIOT] Không thể lấy dữ liệu (lần ${errorCount}). Vui lòng kiểm tra lại Server và Token.`, lastError || 'Unknown error');
+        lastErrorTime = now;
+      }
+      return null;
+    }
     
-    // Lấy attributes (pump state, mode)
-    const attributesUrl = COREIOT_CONFIG.getUrl('attributes');
-    const attributesResponse = await fetch(attributesUrl);
+    // Lấy attributes (pump state, mode) - optional
     let attributesData = {};
-    
-    if (attributesResponse.ok) {
-      attributesData = await attributesResponse.json();
+    try {
+      const attributesFormats = [
+        '/api/v1/{token}/attributes',
+        '/api/plugins/telemetry/{token}/attributes'
+      ];
+      
+      for (const attrFormat of attributesFormats) {
+        const protocol = COREIOT_CONFIG.server.startsWith('http') ? '' : 'https://';
+        const attributesUrl = `${protocol}${COREIOT_CONFIG.server}${attrFormat.replace('{token}', COREIOT_CONFIG.token)}`;
+        const attributesResponse = await fetch(attributesUrl);
+        
+        if (attributesResponse.ok) {
+          attributesData = await attributesResponse.json();
+          break;
+        }
+      }
+    } catch (err) {
+      // Attributes là optional, không cần log error
     }
     
     // Merge dữ liệu
@@ -68,7 +123,12 @@ async function fetchCoreIOTData() {
       ...attributesData
     };
   } catch (error) {
-    console.error('Error fetching CoreIOT data:', error);
+    const now = Date.now();
+    if (now - lastErrorTime > ERROR_LOG_INTERVAL) {
+      errorCount++;
+      console.warn(`[CoreIOT] Lỗi kết nối (lần ${errorCount}):`, error.message);
+      lastErrorTime = now;
+    }
     return null;
   }
 }
